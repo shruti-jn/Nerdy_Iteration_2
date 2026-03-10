@@ -1,0 +1,8 @@
+After completing any task, append an entry to `BUILD_SUMMARY.md`.
+
+Each entry must be short and include:
+- `What:` what changed
+- `Why:` why the change was made
+- `How:` how it was implemented
+
+Always append new entries. Never edit, rewrite, or delete existing `BUILD_SUMMARY.md` entries.

@@ -1,0 +1,14 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+deepgram-sdk>=6.0.0
+groq>=0.34.0
+cartesia
+aiortc>=1.9.0
+logfire
+braintrust
+textstat>=0.7.0
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0

@@ -1,0 +1,30 @@
+# Ignore all Markdown files by default.
+*.md
+
+# Allow the explicitly permitted Markdown files.
+!README.md
+!ARCHITECTURE.md
+!BUILD_SUMMARY.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# Environment
+.env
+backend/.env
+
+# IDE
+.cursor/
+.vscode/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# OS
+.DS_Store
