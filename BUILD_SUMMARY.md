@@ -750,3 +750,30 @@ Refs:
 - `backend/tests/test_scorers.py:71-101`
 - `backend/tests/test_session_manager.py:85-130`
 - `backend/tests/test_session_store.py:1-120`
+
+---
+
+## 2026-03-14 — Fix: Avatar freezes after ~40s (dead SSL transport detection)
+
+What:
+- Added `_is_ws_alive()` method to `SimliAvatarAdapter` that checks both WebSocket protocol state AND the underlying asyncio transport's `is_closing()` state
+- Updated `send_audio()` and `_keepalive_loop()` to use `_is_ws_alive()` instead of only checking `ws.state`
+- Changed `websockets.connect()` from `ping_interval=None` to `ping_interval=20, ping_timeout=None` — sends WebSocket pings to keep the connection alive without killing it if pongs don't return
+
+Why:
+Avatar lip-sync froze after ~40 seconds (around turn 2-3). Root cause: the Simli WebSocket's SSL transport was dying silently — `ws.state` still showed OPEN (1) because no WebSocket close frame was exchanged, but the underlying SSL connection was dead. `ws.send()` didn't raise — it buffered data to the dead transport, which logged `WARNING asyncio SSL connection is closed` but never propagated the error back. All TTS audio was silently lost, freezing the avatar permanently for the rest of the session.
+
+How:
+1. `_is_ws_alive()` checks `ws.state != 1` (protocol-level) AND `ws.transport.is_closing()` (transport-level). The transport check catches SSL deaths that the protocol layer misses.
+2. `send_audio()` now calls `_is_ws_alive()` before sending. On dead connection, immediately marks `_ready=False` and stops keepalive.
+3. `_keepalive_loop()` uses the same check before each keepalive frame.
+4. Re-enabled WebSocket pings (`ping_interval=20`) to keep the connection alive through network intermediaries. Used `ping_timeout=None` so the library won't kill the connection if Simli doesn't respond to pings (previous code comment indicated Simli may not respond).
+
+Decisions:
+- **Transport-level check over ping-based detection**: WebSocket pings have a ~40s detection delay (20s interval + 20s timeout). Transport `is_closing()` detects dead connections immediately on the next check cycle (3s keepalive interval).
+- **`ping_timeout=None` (no pong requirement)**: Previous developer noted Simli doesn't respond to pings. Using `None` means pings are sent (keeping intermediary connections alive) but missing pongs don't trigger a disconnect. The transport check handles actual dead connections instead.
+- **Both checks (belt and suspenders)**: Protocol-level check catches clean WebSocket closes (close frame sent). Transport-level check catches dirty deaths (SSL/TCP failure). Together they cover all failure modes.
+
+Refs:
+- `backend/adapters/avatar_adapter.py:262-284,318-350,176-186`
+- `backend/tests/test_avatar_adapter.py:448-455`

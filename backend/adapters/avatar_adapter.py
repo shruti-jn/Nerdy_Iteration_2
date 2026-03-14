@@ -173,14 +173,18 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
             ice_servers = session["ice_servers"]
 
             # Step 3: Open WebSocket to Simli signaling endpoint.
-            # Disable the websockets library's automatic ping/pong: Simli's
-            # signaling+audio WS doesn't reply to pings, so the library's
-            # default 20s ping + 20s timeout would kill the connection ~40s
-            # after signaling completes. We keep the connection alive with
-            # our own silent-audio keepalive task instead.
+            # Enable pings (20s interval) to keep the connection alive, but
+            # disable the pong timeout (ping_timeout=None) so the library
+            # won't kill the connection if Simli doesn't respond to pings.
+            # Previous approach (ping_interval=None) caused the connection
+            # to die silently at ~40s — either from Simli's server-side
+            # ping timeout or a network intermediary (CDN/ALB) idle timeout.
+            # With pings enabled but no timeout, the pings themselves act as
+            # traffic that prevents intermediary timeouts, and our
+            # _is_ws_alive() transport check catches true dead connections.
             url = f"{_WS_BASE_URL}?session_token={self._session_token}"
             self._ws = await asyncio.wait_for(
-                websockets.connect(url, ping_interval=None),
+                websockets.connect(url, ping_interval=20, ping_timeout=None),
                 timeout=_HANDSHAKE_TIMEOUT_S,
             )
 
@@ -257,6 +261,29 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                 context={"face_id": self._face_id},
             ) from exc
 
+    # ── Transport health ─────────────────────────────────────────────────────
+
+    def _is_ws_alive(self) -> bool:
+        """Check if the WebSocket connection is truly alive.
+
+        Checks both the WebSocket protocol state AND the underlying asyncio
+        transport.  The websockets library may report state=OPEN even after
+        the SSL/TCP transport has been closed by the remote end (especially
+        when ping_interval is None), so we must also inspect the transport.
+        """
+        if self._ws is None:
+            return False
+        # Protocol-level check (OPEN = 1)
+        ws_state = getattr(self._ws, "state", None)
+        if ws_state is not None and ws_state != 1:
+            return False
+        # Transport-level check — catches SSL connection deaths that the
+        # websockets protocol layer hasn't noticed yet.
+        transport = getattr(self._ws, "transport", None)
+        if transport is not None and transport.is_closing():
+            return False
+        return True
+
     # ── Keepalive ──────────────────────────────────────────────────────────────
 
     def _start_keepalive(self) -> None:
@@ -278,9 +305,12 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                 await asyncio.sleep(_KEEPALIVE_INTERVAL_S)
                 if not self._ready or self._ws is None:
                     break
-                ws_state = getattr(self._ws, "state", None)
-                if ws_state is not None and ws_state != 1:
-                    logger.warning("Simli keepalive: ws_state=%s, stopping", ws_state)
+                if not self._is_ws_alive():
+                    logger.warning(
+                        "Simli keepalive: connection dead (state=%s, transport_closing=%s), stopping",
+                        getattr(self._ws, "state", "?"),
+                        getattr(getattr(self._ws, "transport", None), "is_closing", lambda: "?")(),
+                    )
                     self._ready = False
                     break
                 try:
@@ -314,15 +344,15 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                 self._drop_logged = True
             return
 
-        # Validate WebSocket state before sending
-        ws_state = getattr(self._ws, "state", None)
-        if ws_state is not None and ws_state != 1:  # 1 = OPEN in websockets lib
+        # Check both WebSocket protocol state AND transport health.
+        if not self._is_ws_alive():
             logger.warning(
-                "Simli send_audio skipped: ws_state=%s (not OPEN), marking not ready",
-                ws_state,
+                "Simli send_audio: connection dead (state=%s, transport_closing=%s) — marking not ready",
+                getattr(self._ws, "state", "?"),
+                getattr(getattr(self._ws, "transport", None), "is_closing", lambda: "?")(),
             )
             self._ready = False
-            self._drop_logged = False  # reset so next drop period logs once
+            self._drop_logged = False
             self._stop_keepalive()
             return
 

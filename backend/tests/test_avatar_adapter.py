@@ -449,6 +449,10 @@ class TestConnect:
         mock_ws.send = AsyncMock(side_effect=lambda d: sent.append(d))
         # Simulate websockets OPEN state (state == 1)
         mock_ws.state = 1
+        # Mock transport with is_closing() returning False (connection alive)
+        mock_transport = MagicMock()
+        mock_transport.is_closing.return_value = False
+        mock_ws.transport = mock_transport
         adapter._ws = mock_ws
 
         await adapter.send_audio(b"\x00" * 3200)
