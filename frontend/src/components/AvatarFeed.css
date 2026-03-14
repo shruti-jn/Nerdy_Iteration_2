@@ -1,0 +1,305 @@
+.avatar-feed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 16px;
+  background: var(--bg-primary);
+  position: relative;
+}
+
+/* Frame */
+.avatar-feed__frame {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  aspect-ratio: 9 / 12;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 2px solid var(--border);
+  transition: border-color var(--dur-normal) var(--ease),
+              box-shadow var(--dur-normal) var(--ease);
+  background: var(--bg-surface);
+}
+
+.avatar-feed__frame--speaking {
+  border-color: var(--border-accent);
+  animation: avatar-pulse 2s ease-in-out infinite;
+}
+
+.avatar-feed__frame--listening {
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3), 0 0 40px rgba(59, 130, 246, 0.1);
+}
+
+/* Live WebRTC video element */
+.avatar-feed__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--dur-normal) var(--ease);
+  z-index: 1;
+}
+
+.avatar-feed__video--active {
+  opacity: 1;
+}
+
+/* Video area — placeholder */
+.avatar-feed__video-placeholder {
+  width: 100%;
+  height: 100%;
+  transition: opacity var(--dur-normal) var(--ease);
+}
+
+.avatar-feed__video-placeholder--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Status badge */
+.avatar-feed__badge {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: fade-in-up var(--dur-normal) var(--ease) both;
+}
+
+/* Status badge variants */
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.status-badge--idle {
+  background: rgba(15, 17, 23, 0.7);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.status-badge--listening {
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.status-badge--speaking {
+  background: rgba(45, 212, 191, 0.15);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  color: var(--accent);
+}
+
+.status-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-badge--idle .status-badge__dot {
+  background: var(--text-muted);
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+.status-badge--listening .status-badge__dot {
+  background: var(--accent-blue);
+  animation: pulse-ring-danger 1s ease-out infinite;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+}
+
+.status-badge--speaking .status-badge__dot {
+  background: var(--accent);
+  animation: pulse-ring 1.4s ease-out infinite;
+  box-shadow: 0 0 0 0 var(--accent-glow);
+}
+
+/* ── Avatar Placeholder ───────────────────────────────────────────────────── */
+.avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  background: linear-gradient(160deg, #161b27 0%, #0f1117 100%);
+  padding: 24px;
+}
+
+.avatar-placeholder__face {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e2535, #252d3f);
+  border: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  position: relative;
+  transition: border-color var(--dur-normal) var(--ease);
+}
+
+.avatar-placeholder--tutor-responding .avatar-placeholder__face {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 20px var(--accent-glow-lg);
+}
+
+.avatar-placeholder__eyes {
+  display: flex;
+  gap: 18px;
+}
+
+.avatar-placeholder__eye {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+}
+
+.avatar-placeholder--tutor-responding .avatar-placeholder__eye {
+  background: var(--accent);
+}
+
+.avatar-placeholder__mouth {
+  width: 28px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--text-muted);
+  transition: height var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+
+.avatar-placeholder__mouth--talking {
+  background: var(--accent);
+  animation: mouth-talk 0.3s ease-in-out infinite alternate;
+}
+
+@keyframes mouth-talk {
+  from { height: 4px; border-radius: 3px; }
+  to   { height: 10px; border-radius: 5px; }
+}
+
+.avatar-placeholder__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.avatar-placeholder__sublabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 200px;
+  line-height: 1.5;
+}
+
+/* ── Shimmer animation for connecting state ──────────────────────────────── */
+@keyframes shimmer-sweep {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.avatar-placeholder__face--shimmer {
+  background: linear-gradient(90deg,
+    #1e2535 25%, #2a3347 37%, #1e2535 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+}
+
+.avatar-placeholder__face--shimmer .avatar-placeholder__eyes,
+.avatar-placeholder__face--shimmer .avatar-placeholder__mouth {
+  opacity: 0.15;
+  transition: opacity 0.4s ease;
+}
+
+/* Slow state — gentle fade-in for the "almost ready" message */
+.avatar-placeholder__sublabel--slow {
+  animation: fade-in-up 0.5s ease both;
+  color: var(--text-secondary);
+}
+
+/* Connecting badge */
+.status-badge--connecting {
+  background: rgba(15, 17, 23, 0.7);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.status-badge--connecting .status-badge__dot {
+  background: var(--text-muted);
+  animation: idle-breathe 2s ease-in-out infinite;
+}
+
+/* ── Error state ─────────────────────────────────────────────────────────── */
+.avatar-placeholder__face--error {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: linear-gradient(135deg, #2a1a1a, #351e1e);
+}
+
+.avatar-placeholder__error-icon {
+  font-size: 36px;
+  font-weight: 700;
+  color: rgba(239, 68, 68, 0.8);
+  line-height: 1;
+}
+
+.avatar-placeholder__sublabel--error {
+  animation: fade-in-up 0.5s ease both;
+  color: rgba(239, 68, 68, 0.8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar-placeholder__retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(239, 68, 68, 0.9);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease);
+}
+
+.avatar-placeholder__retry-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.avatar-placeholder__retry-btn:active {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* Error badge */
+.status-badge--error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: rgba(239, 68, 68, 0.9);
+}
+
+.status-badge--error .status-badge__dot {
+  background: rgba(239, 68, 68, 0.8);
+}

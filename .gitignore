@@ -5,9 +5,12 @@
 !README.md
 !ARCHITECTURE.md
 !BUILD_SUMMARY.md
+!CLAUDE.md
+!RUNBOOK.md
 
 # Python
 .venv/
+backend/venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -25,6 +28,15 @@ backend/.env
 # Node
 frontend/node_modules/
 frontend/.next/
+frontend/dist/
+
+# Logs (dirs tracked, log files ignored)
+backend/logs/*.log
+backend/logs/*.log.*
+frontend/logs/*.log
+
+# Session data
+backend/data/
 
 # OS
 .DS_Store

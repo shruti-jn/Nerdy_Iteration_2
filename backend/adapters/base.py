@@ -19,7 +19,7 @@ Exports:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from typing import AsyncIterator, Awaitable, Callable
 
 from pipeline.errors import AdapterError, AdapterTimeoutError  # noqa: F401
 
@@ -27,40 +27,73 @@ from pipeline.errors import AdapterError, AdapterTimeoutError  # noqa: F401
 class BaseSTTAdapter(ABC):
     """Abstract base class for speech-to-text adapters.
 
-    Concrete implementations consume a stream of raw audio frames and
-    produce a final transcript string. They must also support cooperative
-    cancellation so the orchestrator can abort an in-progress recognition
-    when a student interrupt is detected.
+    Concrete implementations open a streaming connection, accept audio
+    frames in real time, emit partial and final transcript callbacks,
+    and return the accumulated final transcript when ``finish()`` is
+    called.  They must also support cooperative cancellation so the
+    orchestrator can abort an in-progress recognition when a student
+    interrupt is detected.
     """
 
     @abstractmethod
-    async def transcribe(
+    async def start(
         self,
-        audio_frames: AsyncIterator[bytes],
         metrics: "MetricsCollector",
-    ) -> str:
-        """Consume an audio stream and return the final transcript.
+        on_partial: Callable[[str], Awaitable[None]],
+        on_final: Callable[[str], Awaitable[None]],
+    ) -> None:
+        """Open a streaming STT connection and register callbacks.
 
-        Reads audio frames until the stream is exhausted or an
-        end-of-utterance signal is detected, then returns the full
-        transcription text.
+        Opens a persistent connection to the STT provider and begins
+        accepting audio via :meth:`send_audio`.  As transcription
+        results arrive:
+
+        * **on_partial** is called with interim (non-final) text so the
+          frontend can display a live transcript while the student is
+          still speaking.
+        * **on_final** is called each time the provider commits a
+          segment of the transcript (``is_final=True``).
 
         Args:
-            audio_frames: Async iterator yielding raw audio chunks
-                          (PCM 16-bit, 16 kHz mono expected by most
-                          providers).
-            metrics:      MetricsCollector instance for recording
-                          per-stage latency (time-to-first-result,
-                          total duration).
-
-        Returns:
-            The transcribed text from the audio stream.
+            metrics:    MetricsCollector for recording per-stage latency.
+            on_partial: Async callback invoked with the latest interim
+                        transcript text.
+            on_final:   Async callback invoked when a final transcript
+                        segment is committed by the provider.
 
         Raises:
-            AdapterError:        The underlying STT service returned an
-                                 error or the connection failed.
-            AdapterTimeoutError: The transcription exceeded its latency
-                                 budget (stt_max_ms).
+            AdapterError: The connection to the STT service failed.
+        """
+        ...
+
+    @abstractmethod
+    async def send_audio(self, chunk: bytes) -> None:
+        """Forward a single PCM audio chunk to the STT engine.
+
+        Must be called only after :meth:`start` and before
+        :meth:`finish` or :meth:`cancel`.  Chunks are PCM 16-bit
+        16 kHz mono (the standard mic capture format).
+
+        Args:
+            chunk: Raw PCM audio bytes.
+        """
+        ...
+
+    @abstractmethod
+    async def finish(self) -> str:
+        """Signal that no more audio will be sent and return the transcript.
+
+        Tells the STT provider to flush any buffered audio and emit
+        final results.  Blocks until the provider confirms the
+        utterance is complete (or a safety timeout expires), then
+        returns the full accumulated transcript.
+
+        Returns:
+            The complete transcribed text for the utterance.
+
+        Raises:
+            AdapterError: The STT service returned an error or the
+                          connection dropped before delivering results.
         """
         ...
 
@@ -70,7 +103,7 @@ class BaseSTTAdapter(ABC):
 
         Called by the orchestrator when a student interrupt is detected
         and the current STT pass must be abandoned. Implementations
-        should release network resources and abort pending requests.
+        should close the streaming connection and release resources.
 
         This method must be safe to call even if no transcription is
         currently active (idempotent).

@@ -15,12 +15,29 @@ class Settings(BaseSettings):
     deepgram_api_key: str = Field(default="", description="Deepgram API key for STT (Nova-3)")
     groq_api_key: str = Field(default="", description="Groq API key for LLM (Llama 3.3 70B)")
     cartesia_api_key: str = Field(default="", description="Cartesia API key for TTS (Sonic-3)")
+    elevenlabs_api_key: str = Field(default="", description="ElevenLabs API key for TTS")
+    elevenlabs_voice_id: str = Field(default="JBFqnCBsd6RMkjVDRZzb", description="ElevenLabs voice ID")
     simli_api_key: str = Field(default="", description="Simli API key for avatar rendering")
     logfire_token: str = Field(default="", description="Pydantic Logfire token for observability")
     braintrust_api_key: str = Field(default="", description="Braintrust API key for eval logging")
 
+    tts_provider: str = Field(default="deepgram", description="TTS provider: 'deepgram' or 'cartesia'")
+    cartesia_voice_id: str = Field(default="", description="Cartesia voice ID (from Cartesia voice library)")
+
+    # --- LLM ---
+    llm_model: str = Field(default="llama-3.3-70b-versatile", description="Groq model ID for tutoring")
+    llm_max_tokens: int = Field(default=150, description="Max tokens per LLM response (Socratic replies are short)")
+
     # --- Orchestrator ---
     orchestrator: str = Field(default="custom", description="Orchestrator type: 'custom' or 'livekit'")
+
+    # --- Session ---
+    max_turns: int = Field(default=15, description="Maximum conversational turns per tutoring session")
+
+    # --- Deepgram Live STT ---
+    stt_endpointing_ms: int = Field(default=300, description="Deepgram endpointing threshold in ms (silence to trigger is_final)")
+    stt_utterance_end_ms: int = Field(default=1000, description="Silence duration before Deepgram fires UtteranceEnd event")
+    stt_interim_results: bool = Field(default=True, description="Enable interim/partial transcripts from Deepgram")
 
     # --- Latency Budgets (ms) ---
     stt_target_ms: int = Field(default=150, description="STT target latency in ms")
@@ -41,7 +58,11 @@ class Settings(BaseSettings):
     host: str = Field(default="0.0.0.0", description="Server bind host")
     port: int = Field(default=8000, description="Server bind port")
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ("../.env", ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

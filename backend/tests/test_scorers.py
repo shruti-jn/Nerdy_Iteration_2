@@ -68,6 +68,39 @@ class TestNoDirectAnswer:
         assert score_no_direct_answer(turn) == 0.0
 
 
+class TestNoDirectAnswerTeacherMode:
+    """Verify Teacher Mode tolerance in the no-direct-answer scorer."""
+
+    def test_teacher_mode_allows_direct_answer(self) -> None:
+        """When teacher_mode=True, direct explanations should score 1.0."""
+        turn = {
+            "student_input": "I don't know",
+            "tutor_response": "Photosynthesis is the process where plants use sunlight to make food. What ingredient comes from the sky?",
+            "topic": "photosynthesis",
+            "teacher_mode": True,
+        }
+        assert score_no_direct_answer(turn) == 1.0
+
+    def test_teacher_mode_false_still_penalizes(self) -> None:
+        """When teacher_mode=False, direct explanations should score 0.0."""
+        turn = {
+            "student_input": "I don't know",
+            "tutor_response": "Photosynthesis is the process by which plants make food.",
+            "topic": "photosynthesis",
+            "teacher_mode": False,
+        }
+        assert score_no_direct_answer(turn) == 0.0
+
+    def test_teacher_mode_absent_defaults_to_penalty(self) -> None:
+        """When teacher_mode key is absent, direct answers are penalized (backward compat)."""
+        turn = {
+            "student_input": "How do plants eat?",
+            "tutor_response": "The answer is that they photosynthesize.",
+            "topic": "photosynthesis",
+        }
+        assert score_no_direct_answer(turn) == 0.0
+
+
 # ---------------------------------------------------------------------------
 # 3. score_no_negation
 # ---------------------------------------------------------------------------

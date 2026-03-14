@@ -36,11 +36,13 @@ from pipeline.orchestrator_protocol import Orchestrator
 class ConcreteSTT(BaseSTTAdapter):
     """Fully-implemented mock STT adapter for testing."""
 
-    async def transcribe(
-        self,
-        audio_frames: AsyncIterator[bytes],
-        metrics: "MetricsCollector",
-    ) -> str:
+    async def start(self, metrics, on_partial, on_final) -> None:
+        pass
+
+    async def send_audio(self, chunk: bytes) -> None:
+        pass
+
+    async def finish(self) -> str:
         return "hello world"
 
     async def cancel(self) -> None:
@@ -98,8 +100,14 @@ class ConcreteAvatar(BaseAvatarAdapter):
 # ---------------------------------------------------------------------------
 
 
-class IncompleteSTT_MissingTranscribe(BaseSTTAdapter):
-    """STT subclass missing 'transcribe'."""
+class IncompleteSTT_MissingStart(BaseSTTAdapter):
+    """STT subclass missing 'start'."""
+
+    async def send_audio(self, chunk: bytes) -> None:
+        pass
+
+    async def finish(self) -> str:
+        return ""
 
     async def cancel(self) -> None:
         pass
@@ -108,11 +116,13 @@ class IncompleteSTT_MissingTranscribe(BaseSTTAdapter):
 class IncompleteSTT_MissingCancel(BaseSTTAdapter):
     """STT subclass missing 'cancel'."""
 
-    async def transcribe(
-        self,
-        audio_frames: AsyncIterator[bytes],
-        metrics: "MetricsCollector",
-    ) -> str:
+    async def start(self, metrics, on_partial, on_final) -> None:
+        pass
+
+    async def send_audio(self, chunk: bytes) -> None:
+        pass
+
+    async def finish(self) -> str:
         return ""
 
 
@@ -210,10 +220,10 @@ class TestBaseSTTAdapter:
         adapter = ConcreteSTT()
         assert isinstance(adapter, BaseSTTAdapter)
 
-    def test_missing_transcribe_raises_type_error(self):
-        """A subclass missing 'transcribe' cannot be instantiated."""
+    def test_missing_start_raises_type_error(self):
+        """A subclass missing 'start' cannot be instantiated."""
         with pytest.raises(TypeError):
-            IncompleteSTT_MissingTranscribe()
+            IncompleteSTT_MissingStart()
 
     def test_missing_cancel_raises_type_error(self):
         """A subclass missing 'cancel' cannot be instantiated."""
@@ -406,7 +416,7 @@ class TestABCInheritance:
         assert BaseAvatarAdapter.__abstractmethods__
 
     def test_stt_abstract_methods(self):
-        expected = {"transcribe", "cancel"}
+        expected = {"start", "send_audio", "finish", "cancel"}
         assert BaseSTTAdapter.__abstractmethods__ == expected
 
     def test_llm_abstract_methods(self):

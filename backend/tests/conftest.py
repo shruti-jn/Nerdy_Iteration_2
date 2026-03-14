@@ -34,6 +34,8 @@ class TestConfig:
     deepgram_api_key: str = "test-deepgram-key-00000"
     groq_api_key: str = "test-groq-key-00000"
     cartesia_api_key: str = "test-cartesia-key-00000"
+    elevenlabs_api_key: str = "test-elevenlabs-key-00000"
+    elevenlabs_voice_id: str = "test-voice-id-00000"
     simli_api_key: str = "test-simli-key-00000"
     logfire_token: str = "test-logfire-token-00000"
     braintrust_api_key: str = "test-braintrust-key-00000"
@@ -128,3 +130,16 @@ def mock_audio_frames():
             yield os.urandom(1600)
 
     return _audio_stream
+
+
+# ---------------------------------------------------------------------------
+# MetricsCollector fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def metrics_collector():
+    """Return a fresh MetricsCollector instance for per-test latency tracking."""
+    from pipeline.metrics import MetricsCollector
+
+    return MetricsCollector()

@@ -1,0 +1,39 @@
+.latency-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.latency-panel__cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.latency-panel__label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.latency-panel__value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 38px;
+  text-align: right;
+}
+
+.latency-panel__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.latency-panel__dot--green   { background: #22c55e; }
+.latency-panel__dot--yellow  { background: #eab308; }
+.latency-panel__dot--red     { background: #ef4444; }
+.latency-panel__dot--neutral { background: var(--border); }

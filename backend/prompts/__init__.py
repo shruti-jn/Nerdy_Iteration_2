@@ -16,6 +16,19 @@ _TOPIC_SCAFFOLDS = {
     "newtons_laws": NEWTONS_LAWS_SCAFFOLD,
 }
 
+# Public list of topic keys that have full scaffolds
+AVAILABLE_TOPICS: list[str] = list(_TOPIC_SCAFFOLDS.keys())
+
+# Template for the greeting turn (Turn 0) — injected as the user message
+# so the LLM generates a warm opening within the Socratic persona.
+_GREETING_TEMPLATE = (
+    "[Greeting — no student has spoken yet] "
+    "Introduce yourself as Socrates 6. Welcome the student to today's lesson on {topic}. "
+    "Start with a mystery or surprising question that hooks their curiosity "
+    "(use the STEP 0 — THE HOOK from the topic scaffold). "
+    "Be warm and a little funny. Keep it under 40 words total."
+)
+
 
 def build_prompt(topic: str) -> str:
     """Assembles the full system prompt from all three layers for the given topic.
@@ -35,3 +48,16 @@ def build_prompt(topic: str) -> str:
         raise ValueError(f"Unknown topic '{topic}'. Available: {available}")
 
     return f"{SOCRATIC_SYSTEM_PROMPT}\n{scaffold}\n{ADAPTIVE_RULES}"
+
+
+def build_greeting_prompt(topic: str) -> str:
+    """Build the synthetic user message that triggers the tutor's greeting.
+
+    Args:
+        topic: Topic identifier (e.g. "photosynthesis").
+
+    Returns:
+        A user-message string instructing the LLM to greet the student.
+    """
+    display = topic.replace("_", " ").title()
+    return _GREETING_TEMPLATE.format(topic=display)

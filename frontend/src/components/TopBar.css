@@ -1,0 +1,128 @@
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-h);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: rgba(15, 17, 23, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Brand */
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.topbar__logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+
+.topbar__name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+/* Topic */
+.topbar__topic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: center;
+}
+
+.topbar__topic-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.topbar__separator {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.topbar__grade {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-accent);
+  background: rgba(45, 212, 191, 0.1);
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+}
+
+/* Latency toggle button */
+.topbar__latency-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: inherit;
+  flex: 1;
+  justify-content: center;
+}
+
+.topbar__latency-toggle:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.topbar__trend-caret {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* Turn counter */
+.topbar__turn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.topbar__turn-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.topbar__turn-count {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.topbar__turn-total {
+  color: var(--text-muted);
+  font-weight: 400;
+}

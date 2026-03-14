@@ -1,0 +1,79 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* ── Main content area ────────────────────────────────────────────────────── */
+.app__main {
+  display: grid;
+  grid-template-columns: var(--col-side-w) 1fr var(--col-side-w);
+  flex: 1;
+  margin-top: var(--topbar-h);
+  margin-bottom: var(--bottombar-h);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ── Columns ──────────────────────────────────────────────────────────────── */
+.app__col {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.app__col--left {
+  /* ConversationHistory fills this */
+}
+
+.app__col--center {
+  /* AvatarFeed fills this */
+  position: relative;
+}
+
+.app__col--right {
+  /* TutorResponse fills this */
+}
+
+/* ── Error banner ─────────────────────────────────────────────────────────── */
+.app__error-banner {
+  position: fixed;
+  bottom: calc(var(--bottombar-h) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #d32f2f;
+  color: #fff;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 500px;
+  text-align: center;
+}
+
+/* ── Responsive: tablet ───────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  :root {
+    --col-side-w: 220px;
+  }
+}
+
+/* ── Responsive: mobile (single column) ──────────────────────────────────── */
+@media (max-width: 640px) {
+  .app__main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .app__col--left {
+    display: none;
+  }
+
+  .app__col--right {
+    max-height: 160px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}

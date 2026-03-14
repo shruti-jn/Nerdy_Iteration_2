@@ -88,14 +88,19 @@ def score_ends_with_question(response: str) -> float:
 def score_no_direct_answer(turn: dict) -> float:
     """Penalise responses that lecture or give away the answer directly.
 
+    In Teacher Mode (triggered after 3+ failed attempts), direct explanations
+    are expected and acceptable — the scorer returns 1.0 without checking.
+
     Args:
         turn: A dict with keys ``student_input``, ``tutor_response``, and
-              ``topic``.
+              ``topic``. Optional key ``teacher_mode`` (bool, default False).
 
     Returns:
-        0.0 if the response contains any forbidden direct-answer phrase,
-        1.0 otherwise.
+        0.0 if the response contains any forbidden direct-answer phrase
+        and teacher_mode is not True, 1.0 otherwise.
     """
+    if turn.get("teacher_mode", False):
+        return 1.0
     text = turn["tutor_response"].lower()
     for phrase in _DIRECT_ANSWER_PHRASES:
         if phrase in text:

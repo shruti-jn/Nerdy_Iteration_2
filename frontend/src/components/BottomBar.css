@@ -1,0 +1,194 @@
+.bottom-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--bottombar-h);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  background: rgba(15, 17, 23, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  gap: 16px;
+}
+
+/* Sides */
+.bottom-bar__side {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.bottom-bar__side--left {
+  justify-content: flex-start;
+}
+
+.bottom-bar__side--right {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Center */
+.bottom-bar__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ── Mic Button ───────────────────────────────────────────────────────────── */
+.mic-btn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--dur-fast) var(--ease),
+              box-shadow var(--dur-normal) var(--ease),
+              background var(--dur-normal) var(--ease);
+  position: relative;
+  outline: none;
+}
+
+.mic-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Idle state */
+.mic-btn--idle {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  box-shadow: 0 0 0 0 var(--accent-glow),
+              0 2px 12px rgba(0, 0, 0, 0.4);
+  animation: idle-breathe 3s ease-in-out infinite;
+}
+
+.mic-btn--idle:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  transform: scale(1.05);
+  box-shadow: 0 0 0 6px var(--accent-glow-lg),
+              0 4px 20px rgba(0, 0, 0, 0.5);
+  animation: none;
+}
+
+.mic-btn--idle:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Recording state */
+.mic-btn--recording {
+  background: var(--danger);
+  color: #fff;
+  transform: scale(1.08);
+  animation: pulse-ring-danger 1s ease-out infinite;
+  box-shadow: 0 0 0 0 var(--danger-glow),
+              0 4px 24px rgba(239, 68, 68, 0.4);
+}
+
+/* Disabled (tutor speaking) */
+.mic-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  animation: none;
+}
+
+.mic-btn__hint {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+/* ── Barge-in Button ──────────────────────────────────────────────────────── */
+.barge-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  outline: none;
+}
+
+.barge-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.barge-btn--active {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  cursor: pointer;
+}
+
+.barge-btn--active:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+  color: #fecaca;
+}
+
+.barge-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Latency Badge ────────────────────────────────────────────────────────── */
+.latency-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  animation: fade-in-up var(--dur-normal) var(--ease) both;
+}
+
+.latency-badge__icon {
+  font-size: 11px;
+}
+
+.latency-badge__value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Waveform near mic ────────────────────────────────────────────────────── */
+.waveform-mic {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 28px;
+  animation: fade-in-up var(--dur-fast) var(--ease) both;
+}
+
+.waveform-mic__bar {
+  width: 3px;
+  height: 100%;
+  background: var(--danger);
+  border-radius: 2px;
+  transform-origin: center;
+  animation: waveform-bar 0.5s ease-in-out infinite alternate;
+  opacity: 0.8;
+}
