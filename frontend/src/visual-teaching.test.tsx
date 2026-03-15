@@ -20,12 +20,16 @@ import type { LessonVisualState } from "./types";
 
 const MOCK_VISUAL: LessonVisualState = {
   diagramId: "photosynthesis",
-  stepId: 2,
-  stepLabel: "The Green Kitchen",
+  stepId: 0,
+  stepLabel: "The Hook",
   totalSteps: 7,
-  highlightKeys: ["chloroplast", "chlorophyll"],
-  caption: "Chloroplasts are tiny kitchens inside every leaf",
-  emojiDiagram: "🌿 → 🏭 Chloroplast → 👨‍🍳 Chlorophyll",
+  highlightKeys: ["water"],
+  unlockedElements: ["sunlight", "water", "roots"],
+  progressCompleted: 3,
+  progressTotal: 10,
+  progressLabel: "Scene Pieces Unlocked: 3/10",
+  caption: "The picture is filling in. So far you've uncovered sunlight, water, and roots.",
+  emojiDiagram: "🌱 → ☀️ + 💧",
   turnNumber: 3,
   isRecap: false,
 };
@@ -35,8 +39,23 @@ const MOCK_RECAP_VISUAL: LessonVisualState = {
   stepId: -1,
   stepLabel: "Complete!",
   isRecap: true,
-  emojiDiagram: "🌱 ☀️+💧+CO₂ → 🏭 → 🍬 + 💨 O₂ → 🌍🫁🍎",
-  caption: "You traced the full journey of photosynthesis!",
+  unlockedElements: [
+    "sunlight",
+    "water",
+    "roots",
+    "carbon_dioxide",
+    "leaf",
+    "chloroplast",
+    "chlorophyll",
+    "sugar",
+    "fruit",
+    "oxygen",
+  ],
+  progressCompleted: 10,
+  progressTotal: 10,
+  progressLabel: "Scene Pieces Unlocked: 10/10",
+  emojiDiagram: "🌱 ☀️+💧+CO₂ → 🍬 + 💨 O₂",
+  caption: "The whole photosynthesis picture is visible now.",
 };
 
 // ── 1. Store tests ──────────────────────────────────────────────────────────
@@ -184,11 +203,13 @@ describe("StepProgress", () => {
 // ── 3. ConceptCanvas component tests ────────────────────────────────────────
 
 describe("ConceptCanvas", () => {
-  it("renders a layered scene when the topic is known", () => {
+  it("renders the composed photosynthesis scene when the topic is known", () => {
     render(
       <ConceptCanvas
         diagramId={MOCK_VISUAL.diagramId}
         stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={MOCK_VISUAL.caption}
         isRecap={false}
@@ -196,7 +217,8 @@ describe("ConceptCanvas", () => {
     );
 
     expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
-    expect(screen.getByText("Leaf lab")).toBeInTheDocument();
+    expect(screen.getByText("Sunlight")).toBeInTheDocument();
+    expect(screen.getByText("Water")).toBeInTheDocument();
   });
 
   it("renders caption when provided", () => {
@@ -204,6 +226,8 @@ describe("ConceptCanvas", () => {
       <ConceptCanvas
         diagramId={MOCK_VISUAL.diagramId}
         stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption="Chloroplasts are tiny kitchens inside every leaf"
         isRecap={false}
@@ -220,6 +244,8 @@ describe("ConceptCanvas", () => {
       <ConceptCanvas
         diagramId={MOCK_VISUAL.diagramId}
         stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={null}
         isRecap={false}
@@ -229,11 +255,13 @@ describe("ConceptCanvas", () => {
     expect(container.querySelector(".concept-canvas__caption")).toBeNull();
   });
 
-  it("marks past, current, and future layers with reveal statuses", () => {
+  it("reveals only the photosynthesis elements that have been unlocked", () => {
     const { container } = render(
       <ConceptCanvas
         diagramId={MOCK_VISUAL.diagramId}
         stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={MOCK_VISUAL.caption}
         isRecap={false}
@@ -241,15 +269,25 @@ describe("ConceptCanvas", () => {
     );
 
     expect(
-      container.querySelector('[data-layer-id="seed-tree"]')?.getAttribute("data-layer-status"),
-    ).toBe("mastered");
-    expect(
-      container.querySelector('[data-layer-id="leaf-lab"]')?.getAttribute("data-layer-status"),
+      container
+        .querySelector('[data-plant-element-id="sunlight"]')
+        ?.getAttribute("data-plant-element-state"),
     ).toBe("revealed");
     expect(
-      container.querySelector('[data-layer-id="products"]')?.getAttribute("data-layer-status"),
+      container
+        .querySelector('[data-plant-element-id="water"]')
+        ?.getAttribute("data-plant-element-state"),
+    ).toBe("revealed");
+    expect(
+      container
+        .querySelector('[data-plant-element-id="roots"]')
+        ?.getAttribute("data-plant-element-state"),
+    ).toBe("revealed");
+    expect(
+      container
+        .querySelector('[data-plant-element-id="oxygen"]')
+        ?.getAttribute("data-plant-element-state"),
     ).toBe("hidden");
-    expect(screen.getAllByText("Locked").length).toBeGreaterThan(0);
   });
 
   it("shows checkmark on recap", () => {
@@ -257,6 +295,8 @@ describe("ConceptCanvas", () => {
       <ConceptCanvas
         diagramId={MOCK_RECAP_VISUAL.diagramId}
         stepId={MOCK_RECAP_VISUAL.stepId}
+        highlightKeys={MOCK_RECAP_VISUAL.highlightKeys}
+        unlockedElements={MOCK_RECAP_VISUAL.unlockedElements}
         emojiDiagram={MOCK_RECAP_VISUAL.emojiDiagram}
         caption={MOCK_RECAP_VISUAL.caption}
         isRecap={true}
@@ -265,8 +305,10 @@ describe("ConceptCanvas", () => {
 
     expect(screen.getByLabelText("Complete")).toBeInTheDocument();
     expect(screen.getByText("✓")).toBeInTheDocument();
-    const layers = Array.from(container.querySelectorAll("[data-layer-status]"));
-    expect(layers.every((layer) => layer.getAttribute("data-layer-status") === "mastered")).toBe(true);
+    const elements = Array.from(container.querySelectorAll("[data-plant-element-state]"));
+    expect(
+      elements.every((element) => element.getAttribute("data-plant-element-state") === "revealed"),
+    ).toBe(true);
   });
 
   it("does not show checkmark when not recap", () => {
@@ -274,6 +316,8 @@ describe("ConceptCanvas", () => {
       <ConceptCanvas
         diagramId={MOCK_VISUAL.diagramId}
         stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={MOCK_VISUAL.caption}
         isRecap={false}
@@ -289,6 +333,8 @@ describe("ConceptCanvas", () => {
       <ConceptCanvas
         diagramId="unknown-topic"
         stepId={1}
+        highlightKeys={[]}
+        unlockedElements={[]}
         emojiDiagram="⭐ → ❓"
         caption="Fallback"
         isRecap={false}
@@ -302,17 +348,17 @@ describe("ConceptCanvas", () => {
 // ── 4. TeachingPanel component tests ────────────────────────────────────────
 
 describe("TeachingPanel", () => {
-  it("shows 'Tutor Response' title when visual is null", () => {
+  it("shows 'Live Transcript' title when visual is null", () => {
     render(<TeachingPanel mode="idle" streamingWords={[]} visual={null} />);
 
-    expect(screen.getByText("Tutor Response")).toBeInTheDocument();
+    expect(screen.getByText("Live Transcript")).toBeInTheDocument();
   });
 
   it("shows 'Concept Map' title when visual is set", () => {
     render(<TeachingPanel mode="idle" streamingWords={[]} visual={MOCK_VISUAL} />);
 
     expect(screen.getByText("Concept Map")).toBeInTheDocument();
-    expect(screen.queryByText("Tutor Response")).not.toBeInTheDocument();
+    expect(screen.queryByText("Live Transcript")).not.toBeInTheDocument();
   });
 
   it("renders tutor text when visual is null (backward compat)", () => {
@@ -331,7 +377,7 @@ describe("TeachingPanel", () => {
 
     // Visual content
     expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
-    expect(screen.getByText("Leaf lab")).toBeInTheDocument();
+    expect(screen.getByText("Sunlight")).toBeInTheDocument();
     // Tutor text
     expect(screen.getByText("hello")).toBeInTheDocument();
   });
@@ -340,7 +386,7 @@ describe("TeachingPanel", () => {
     render(<TeachingPanel mode="idle" streamingWords={[]} visual={null} />);
 
     expect(
-      screen.getByText("The tutor's response will appear here as they speak."),
+      screen.getByText("Words will appear here as they speak."),
     ).toBeInTheDocument();
   });
 

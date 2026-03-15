@@ -190,7 +190,12 @@ class TestVisualToMessage:
         """Normal step produces a dict with is_recap=False and correct values."""
         vs = get_visual_for_step("photosynthesis", 2)
         assert vs is not None
-        msg = visual_to_message(vs, topic="photosynthesis", turn_number=5)
+        msg = visual_to_message(
+            vs,
+            topic="photosynthesis",
+            turn_number=5,
+            lesson_progress={"revealed_elements": ["sunlight", "water", "roots"]},
+        )
         assert msg["type"] == "lesson_visual_update"
         assert msg["diagram_id"] == "photosynthesis"
         assert msg["step_id"] == 2
@@ -198,9 +203,13 @@ class TestVisualToMessage:
         assert msg["total_steps"] == 7
         assert msg["turn_number"] == 5
         assert msg["is_recap"] is False
-        assert msg["caption"] == vs.caption
+        assert "sunlight, water, and roots" in msg["caption"]
         assert msg["emoji_diagram"] == vs.emoji_diagram
         assert msg["highlight_keys"] == list(vs.highlight_keys)
+        assert msg["unlocked_elements"] == ["sunlight", "water", "roots"]
+        assert msg["progress_completed"] == 3
+        assert msg["progress_total"] == 10
+        assert msg["progress_label"] == "Scene Pieces Unlocked: 3/10"
 
     def test_recap_step(self):
         """Recap message has is_recap=True."""
@@ -214,7 +223,7 @@ class TestVisualToMessage:
         assert msg["type"] == "lesson_visual_update"
 
     def test_message_has_all_required_keys(self):
-        """The message dict contains exactly the 10 expected keys."""
+        """Photosynthesis message includes base visual fields plus progress metadata."""
         vs = get_visual_for_step("photosynthesis", 0)
         assert vs is not None
         msg = visual_to_message(vs, topic="photosynthesis", turn_number=1)
@@ -229,5 +238,35 @@ class TestVisualToMessage:
             "emoji_diagram",
             "turn_number",
             "is_recap",
+            "unlocked_elements",
+            "progress_completed",
+            "progress_total",
+            "progress_label",
         }
         assert set(msg.keys()) == expected_keys
+
+    def test_photosynthesis_recap_unlocks_every_scene_element(self):
+        recap = get_recap_visual("photosynthesis")
+        assert recap is not None
+
+        msg = visual_to_message(
+            recap,
+            topic="photosynthesis",
+            turn_number=9,
+            is_recap=True,
+        )
+
+        assert msg["progress_completed"] == 10
+        assert msg["progress_total"] == 10
+        assert msg["unlocked_elements"] == [
+            "sunlight",
+            "water",
+            "roots",
+            "carbon_dioxide",
+            "leaf",
+            "chloroplast",
+            "chlorophyll",
+            "sugar",
+            "fruit",
+            "oxygen",
+        ]

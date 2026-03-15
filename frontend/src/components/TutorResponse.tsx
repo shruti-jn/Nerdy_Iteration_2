@@ -21,7 +21,7 @@ export function TutorResponse({ mode, streamingWords }: Props) {
   return (
     <aside className="tutor-response">
       <div className="tutor-response__header">
-        <span className="tutor-response__title">Tutor Response</span>
+        <span className="tutor-response__title">Live Transcript</span>
         {isSpeaking && (
           <span className="tutor-response__live-badge">
             <span className="tutor-response__live-dot" />
@@ -33,7 +33,7 @@ export function TutorResponse({ mode, streamingWords }: Props) {
       <div className="tutor-response__scroll" ref={scrollRef}>
         {!hasContent && !isSpeaking && (
           <div className="tutor-response__empty">
-            <p>The tutor's response will appear here as they speak.</p>
+            <p>Words will appear here as they speak.</p>
           </div>
         )}
 

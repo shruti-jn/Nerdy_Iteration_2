@@ -44,6 +44,10 @@ export interface LessonVisualState {
   stepLabel: string;
   totalSteps: number;
   highlightKeys: string[];
+  unlockedElements?: string[];
+  progressCompleted?: number;
+  progressTotal?: number;
+  progressLabel?: string;
   caption: string | null;
   emojiDiagram: string;
   turnNumber: number;

@@ -246,7 +246,15 @@ async def session_handler(ws: WebSocket):
             restore_step = max(0, restore_step)  # clamp to 0 if no steps
             restore_visual = get_visual_for_step(topic, restore_step)
             if restore_visual:
-                await _send_json(ws, visual_to_message(restore_visual, topic, session_mgr.turn_count))
+                await _send_json(
+                    ws,
+                    visual_to_message(
+                        restore_visual,
+                        topic,
+                        session_mgr.turn_count,
+                        lesson_progress=session_mgr.lesson_progress,
+                    ),
+                )
             # SpatialReal needs a fresh token on restore too
             if avatar_provider == "spatialreal":
                 try:

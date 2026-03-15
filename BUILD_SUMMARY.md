@@ -1217,3 +1217,30 @@ What: Fixed the Spatial Real frontend path so tutor audio is no longer played tw
 Why: Spatial Real was exhibiting three deadline-critical regressions in the browser: overlapping duplicate voices, blurry/invalid avatar rendering after the lesson view transition, and an avatar that never returned cleanly to idle/thinking behavior.
 
 How: Updated `frontend/src/useTutorSocket.ts` to support provider-aware local playback suppression plus an end-of-audio callback, updated `frontend/src/App.tsx` to disable browser playback in Spatial Real mode and send a final `end=true` marker to the SDK, refactored `frontend/src/useSpatialRealAvatar.ts` to move a persistent SDK host container instead of reparenting the canvas, added regression coverage in `frontend/src/useTutorSocket.test.ts` and `frontend/src/App.avatar-lifecycle.test.tsx`, and verified with `npm run typecheck` plus `npm test` in `frontend` (`162 passed, 4 skipped`).
+
+---
+
+## 2026-03-15 16:30
+
+What: Updated tutor-panel copy to remove "Tutor Response" phrasing (`TeachingPanel` + `TutorResponse`), widened the right concept-map rail by 200px+ (desktop and tablet), updated related frontend assertions, fixed a stale backend visuals test expectation uncovered by the required full-suite run, and refreshed the `RUNBOOK.md` feature-status note for concept-map width.
+
+Why: The UI needed cleaner wording (without "tutor's response") and a visibly wider concept-map panel for readability; the full test gate also needed to remain green after the copy/layout updates.
+
+How: Switched title/empty-state copy to `Live Transcript` and `Words will appear here as they speak.`, increased `--col-right-w` from `340px` to `540px` (desktop) and from `280px` to `480px` (tablet), aligned Vitest expectations with the new copy, updated backend `test_visuals` to include currently emitted photosynthesis progress metadata keys, ran `source venv/bin/activate && pytest` in `backend` (`343 passed, 1 skipped, 7 deselected`) and `npm test -- --run` in `frontend` (`163 passed, 4 skipped`), then manually verified in-browser at `http://localhost:5173` (lesson flow) plus a Playwright width probe (`railWidth: 540`, old phrase absent).
+
+Decisions:
+- Chose `Live Transcript` as the replacement label instead of removing the header entirely, so the panel still has clear purpose without the old wording.
+- Increased tablet rail width to `480px` (not just desktop) to satisfy the "at least 200px wider" requirement across the non-mobile grid layouts.
+- Updated the backend assertion (rather than changing runtime payload) because the payload already includes intentional progression fields and the test had become outdated.
+
+Refs: `frontend/src/components/TeachingPanel.tsx:30,66`, `frontend/src/components/TutorResponse.tsx:24,36`, `frontend/src/index.css:35`, `frontend/src/App.css:60`, `frontend/src/visual-teaching.test.tsx:351-362,385-390`, `frontend/src/frontend.test.tsx:318-320`, `backend/tests/test_visuals.py:216-237`, `RUNBOOK.md:304`
+
+---
+
+## 2026-03-15 16:34
+
+What: Reworked photosynthesis concept-map visuals from step-based tiles into a single scene that reveals individual elements like sunlight, water, roots, CO2, leaf machinery, sugar, fruit, and oxygen as the student discovers them.
+
+Why: The previous map only unlocked whole curriculum steps, which hid partial wins like finding sunlight and water and did not match the intended “one image fills in piece by piece” learning experience.
+
+How: Added persistent `revealed_elements` tracking to backend lesson progress, included unlock/progress metadata in `lesson_visual_update` and restore payloads, updated frontend visual types/socket handling to carry that state, replaced the photosynthesis renderer in `ConceptCanvas` with a composed illustration while leaving Newton’s existing layout intact, and verified with targeted pytest, Vitest, and `npm run typecheck`.

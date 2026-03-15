@@ -27,7 +27,7 @@ export function TeachingPanel({ mode, streamingWords, visual }: Props) {
     <aside className="teaching-panel">
       <div className="teaching-panel__header">
         <span className="teaching-panel__title">
-          {visual ? "Concept Map" : "Tutor Response"}
+          {visual ? "Concept Map" : "Live Transcript"}
         </span>
         {isSpeaking && (
           <span className="teaching-panel__live-badge">
@@ -41,13 +41,16 @@ export function TeachingPanel({ mode, streamingWords, visual }: Props) {
         <div className="teaching-panel__visual">
           <StepProgress
             currentStep={visual.stepId}
-            totalSteps={visual.totalSteps}
-            stepLabel={visual.stepLabel}
+            totalSteps={visual.progressTotal ?? visual.totalSteps}
+            stepLabel={visual.progressLabel ?? visual.stepLabel}
             isRecap={visual.isRecap}
+            completedCount={visual.progressCompleted}
           />
           <ConceptCanvas
             diagramId={visual.diagramId}
             stepId={visual.stepId}
+            highlightKeys={visual.highlightKeys}
+            unlockedElements={visual.unlockedElements}
             emojiDiagram={visual.emojiDiagram}
             caption={visual.caption}
             isRecap={visual.isRecap}
@@ -60,7 +63,7 @@ export function TeachingPanel({ mode, streamingWords, visual }: Props) {
       <div className="teaching-panel__scroll" ref={scrollRef}>
         {!hasContent && !isSpeaking && (
           <div className="teaching-panel__empty">
-            <p>The tutor's response will appear here as they speak.</p>
+            <p>Words will appear here as they speak.</p>
           </div>
         )}
 

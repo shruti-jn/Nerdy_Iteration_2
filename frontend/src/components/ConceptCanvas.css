@@ -91,6 +91,243 @@
   color: rgba(241, 245, 249, 0.74);
 }
 
+.concept-canvas__scene--illustration {
+  min-height: 322px;
+}
+
+.concept-canvas__illustration {
+  position: relative;
+  min-height: 250px;
+  padding: 10px 8px 18px;
+}
+
+.concept-canvas__sky-haze {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 58%;
+  background:
+    radial-gradient(circle at 22% 24%, rgba(250, 204, 21, 0.18), transparent 20%),
+    radial-gradient(circle at 74% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
+    radial-gradient(circle at 86% 36%, rgba(255, 255, 255, 0.1), transparent 16%);
+  pointer-events: none;
+}
+
+.concept-canvas__ground-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34%;
+  background:
+    radial-gradient(circle at 40% 30%, rgba(74, 222, 128, 0.12), transparent 32%),
+    linear-gradient(180deg, rgba(21, 128, 61, 0.12), rgba(20, 83, 45, 0.6));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.concept-canvas__tree-shadow {
+  position: absolute;
+  left: 49%;
+  bottom: 64px;
+  width: 190px;
+  height: 180px;
+  transform: translateX(-50%);
+  opacity: 0.22;
+  filter: saturate(0.8);
+}
+
+.concept-canvas__tree-canopy {
+  position: absolute;
+  display: block;
+  background: radial-gradient(circle at 50% 40%, rgba(34, 197, 94, 0.8), rgba(22, 101, 52, 0.9));
+  border-radius: 50%;
+  box-shadow: inset 0 -12px 16px rgba(20, 83, 45, 0.35);
+}
+
+.concept-canvas__tree-canopy--left {
+  width: 92px;
+  height: 82px;
+  left: 18px;
+  top: 22px;
+}
+
+.concept-canvas__tree-canopy--middle {
+  width: 118px;
+  height: 100px;
+  left: 42px;
+  top: 0;
+}
+
+.concept-canvas__tree-canopy--right {
+  width: 88px;
+  height: 78px;
+  right: 8px;
+  top: 28px;
+}
+
+.concept-canvas__tree-trunk {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 28px;
+  height: 118px;
+  transform: translateX(-50%);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.78), rgba(68, 64, 60, 0.95));
+}
+
+.concept-canvas__sapling {
+  position: absolute;
+  left: 22%;
+  bottom: 70px;
+  width: 92px;
+  height: 110px;
+}
+
+.concept-canvas__sapling-stem {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 8px;
+  height: 72px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(132, 204, 22, 0.9), rgba(21, 128, 61, 0.95));
+}
+
+.concept-canvas__sapling-leaf {
+  position: absolute;
+  bottom: 46px;
+  width: 34px;
+  height: 20px;
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.95), rgba(22, 163, 74, 0.95));
+  border-radius: 90% 10% 80% 20%;
+  box-shadow: inset 0 -6px 10px rgba(21, 128, 61, 0.28);
+}
+
+.concept-canvas__sapling-leaf--left {
+  left: 14px;
+  transform: rotate(-28deg);
+}
+
+.concept-canvas__sapling-leaf--right {
+  right: 14px;
+  transform: scaleX(-1) rotate(-28deg);
+}
+
+.concept-canvas__root-bed {
+  position: absolute;
+  left: 17%;
+  bottom: 20px;
+  width: 160px;
+  height: 48px;
+  opacity: 0.38;
+}
+
+.concept-canvas__root-line {
+  position: absolute;
+  display: block;
+  height: 2px;
+  background: rgba(191, 219, 254, 0.5);
+  border-radius: 999px;
+  transform-origin: left center;
+}
+
+.concept-canvas__root-line--one {
+  width: 76px;
+  left: 34px;
+  top: 10px;
+  transform: rotate(18deg);
+}
+
+.concept-canvas__root-line--two {
+  width: 92px;
+  left: 22px;
+  top: 22px;
+  transform: rotate(-6deg);
+}
+
+.concept-canvas__root-line--three {
+  width: 84px;
+  left: 26px;
+  top: 34px;
+  transform: rotate(-22deg);
+}
+
+.concept-canvas__plant-element {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 58px;
+  padding: 7px 8px 6px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 17, 23, 0.26);
+  backdrop-filter: blur(6px);
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease),
+    filter 180ms var(--ease),
+    box-shadow 180ms var(--ease),
+    background-color 180ms var(--ease),
+    border-color 180ms var(--ease);
+}
+
+.concept-canvas__plant-element--hidden {
+  opacity: 0.08;
+  filter: blur(6px) saturate(0.1);
+  transform: translate(-50%, -50%) scale(0.82);
+}
+
+.concept-canvas__plant-element--revealed {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  box-shadow: 0 12px 22px rgba(15, 23, 42, 0.24);
+}
+
+.concept-canvas__plant-element--active {
+  border-color: rgba(250, 204, 21, 0.85);
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.16), 0 16px 24px rgba(15, 23, 42, 0.28);
+}
+
+.concept-canvas__plant-element--sun {
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.26), rgba(15, 17, 23, 0.5));
+}
+
+.concept-canvas__plant-element--sky {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.24), rgba(15, 17, 23, 0.48));
+}
+
+.concept-canvas__plant-element--mint {
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.24), rgba(15, 17, 23, 0.48));
+}
+
+.concept-canvas__plant-element--amber {
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.24), rgba(15, 17, 23, 0.48));
+}
+
+.concept-canvas__plant-element--earth {
+  background: linear-gradient(180deg, rgba(168, 162, 158, 0.28), rgba(15, 17, 23, 0.52));
+}
+
+.concept-canvas__plant-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.concept-canvas__plant-label {
+  min-height: 12px;
+  font-size: 10px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.92);
+  text-align: center;
+}
+
 .concept-canvas__scene-grid {
   position: relative;
   min-height: 220px;
@@ -202,6 +439,43 @@
 @media (max-width: 900px) {
   .concept-canvas__scene {
     min-height: 244px;
+  }
+
+  .concept-canvas__scene--illustration {
+    min-height: 292px;
+  }
+
+  .concept-canvas__illustration {
+    min-height: 222px;
+  }
+
+  .concept-canvas__tree-shadow {
+    width: 156px;
+    height: 150px;
+    bottom: 58px;
+  }
+
+  .concept-canvas__sapling {
+    left: 20%;
+    width: 82px;
+    height: 98px;
+  }
+
+  .concept-canvas__root-bed {
+    width: 136px;
+  }
+
+  .concept-canvas__plant-element {
+    min-width: 52px;
+    padding: 6px 7px 5px;
+  }
+
+  .concept-canvas__plant-icon {
+    font-size: 19px;
+  }
+
+  .concept-canvas__plant-label {
+    font-size: 9px;
   }
 
   .concept-canvas__scene-grid {

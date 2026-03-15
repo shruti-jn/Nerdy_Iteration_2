@@ -223,6 +223,7 @@ class TestSerialization:
             "current_step_id": 2,
             "visual_step_id": 2,
             "failed_attempts_on_current_step": 1,
+            "revealed_elements": ["sunlight", "water"],
         }
 
         data = sm.to_dict()
@@ -265,6 +266,7 @@ class TestSerialization:
             "current_step_id": 1,
             "visual_step_id": 1,
             "failed_attempts_on_current_step": 2,
+            "revealed_elements": ["sunlight", "water", "roots"],
         }
 
         data = sm.to_dict()
@@ -276,6 +278,7 @@ class TestSerialization:
         assert data["summary"] == "Prior summary."
         assert data["turn_count"] == 1
         assert data["lesson_progress"]["failed_attempts_on_current_step"] == 2
+        assert data["lesson_progress"]["revealed_elements"] == ["sunlight", "water", "roots"]
 
     def test_from_dict_with_empty_data(self):
         """from_dict with empty dict should produce a fresh session."""

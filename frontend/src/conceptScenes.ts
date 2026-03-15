@@ -19,21 +19,7 @@ export interface ConceptSceneDefinition {
   layers: ConceptSceneLayer[];
 }
 
-const SCENES: Record<TopicId, ConceptSceneDefinition> = {
-  photosynthesis: {
-    id: "photosynthesis",
-    badge: "Greenhouse Map",
-    subhead: "A living scene fills in as each idea clicks into place.",
-    layers: [
-      { id: "seed-tree", stepId: 0, title: "Seed to tree", icon: "🌱🌳", x: 18, y: 26, tone: "earth" },
-      { id: "ingredients", stepId: 1, title: "Sun + water + CO2", icon: "☀️💧🌬️", x: 74, y: 20, tone: "sun" },
-      { id: "leaf-lab", stepId: 2, title: "Leaf lab", icon: "🍃🔬", x: 68, y: 48, tone: "mint" },
-      { id: "light-power", stepId: 3, title: "Light power", icon: "☀️⚡", x: 30, y: 48, tone: "sky" },
-      { id: "products", stepId: 4, title: "Glucose + oxygen", icon: "🍬💨", x: 68, y: 76, tone: "amber" },
-      { id: "payoff", stepId: 5, title: "Why it matters", icon: "🌍🫁🍎", x: 24, y: 78, tone: "sky" },
-      { id: "teach-back", stepId: 6, title: "You explain it", icon: "🎓", x: 50, y: 24, tone: "mint" },
-    ],
-  },
+const SCENES: Partial<Record<TopicId, ConceptSceneDefinition>> = {
   newtons_laws: {
     id: "newtons_laws",
     badge: "Motion Map",
@@ -52,8 +38,8 @@ const SCENES: Record<TopicId, ConceptSceneDefinition> = {
 };
 
 export function getConceptScene(diagramId: string): ConceptSceneDefinition | null {
-  if (diagramId === "photosynthesis" || diagramId === "newtons_laws") {
-    return SCENES[diagramId];
+  if (diagramId === "newtons_laws") {
+    return SCENES[diagramId] ?? null;
   }
   return null;
 }

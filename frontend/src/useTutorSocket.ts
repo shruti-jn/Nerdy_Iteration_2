@@ -69,7 +69,22 @@ type ServerMessage =
   | { type: "session_complete"; turn_number: number; total_turns: number; message: string }
   | { type: "greeting_complete" }
   | { type: "error"; code: string; message?: string; timing?: Record<string, number | null> }
-  | { type: "lesson_visual_update"; diagram_id: string; step_id: number; step_label: string; total_steps: number; highlight_keys?: string[]; caption?: string; emoji_diagram: string; turn_number: number; is_recap: boolean };
+  | {
+      type: "lesson_visual_update";
+      diagram_id: string;
+      step_id: number;
+      step_label: string;
+      total_steps: number;
+      highlight_keys?: string[];
+      unlocked_elements?: string[];
+      progress_completed?: number;
+      progress_total?: number;
+      progress_label?: string;
+      caption?: string;
+      emoji_diagram: string;
+      turn_number: number;
+      is_recap: boolean;
+    };
 
 /** localStorage key for persisting the session ID across page refreshes. */
 export const SESSION_ID_KEY = "tutorSessionId";
@@ -533,6 +548,18 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           stepLabel: msg.step_label,
           totalSteps: msg.total_steps,
           highlightKeys: msg.highlight_keys ?? [],
+          ...(msg.unlocked_elements !== undefined
+            ? { unlockedElements: msg.unlocked_elements }
+            : {}),
+          ...(msg.progress_completed !== undefined
+            ? { progressCompleted: msg.progress_completed }
+            : {}),
+          ...(msg.progress_total !== undefined
+            ? { progressTotal: msg.progress_total }
+            : {}),
+          ...(msg.progress_label !== undefined
+            ? { progressLabel: msg.progress_label }
+            : {}),
           caption: msg.caption ?? null,
           emojiDiagram: msg.emoji_diagram,
           turnNumber: msg.turn_number,
@@ -721,6 +748,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
                 stepLabel: step.stepLabel,
                 totalSteps: mockVisualSteps.length,
                 highlightKeys: [step.stepLabel.toLowerCase()],
+                unlockedElements: ["sunlight", "water", "roots", "carbon_dioxide"].slice(0, stepIdx + 1),
+                progressCompleted: Math.min(stepIdx + 1, 4),
+                progressTotal: 4,
+                progressLabel: `Scene Pieces Unlocked: ${Math.min(stepIdx + 1, 4)}/4`,
                 caption: step.caption,
                 emojiDiagram: step.emoji,
                 turnNumber: nextTurn,
@@ -766,6 +797,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           stepLabel: "Introduction",
           totalSteps: 4,
           highlightKeys: ["intro"],
+          unlockedElements: [],
+          progressCompleted: 0,
+          progressTotal: 4,
+          progressLabel: "Scene Pieces Unlocked: 0/4",
           caption: "How do plants make food?",
           emojiDiagram: "🌱 + ☀️ → ❓",
           turnNumber: 0,

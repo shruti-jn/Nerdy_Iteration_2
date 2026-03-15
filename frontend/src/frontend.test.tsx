@@ -317,7 +317,7 @@ describe("T4-15: AvatarFeed tutor-greeting mode", () => {
 describe("T4-08: TutorResponse word streaming", () => {
   it("shows empty state when no words and not responding", () => {
     render(<TutorResponse mode="idle" streamingWords={[]} />);
-    expect(screen.getByText(/response will appear/i)).toBeInTheDocument();
+    expect(screen.getByText(/words will appear here/i)).toBeInTheDocument();
   });
 
   it("renders streaming words when tutor is responding", () => {

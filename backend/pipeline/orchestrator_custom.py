@@ -290,7 +290,14 @@ class CustomOrchestrator:
             # The frontend map follows server-owned lesson progress, not raw LLM hints.
             visual = get_visual_for_step(self._topic, progress.visual_step_id)
             if visual:
-                await self._send_json(visual_to_message(visual, self._topic, session.turn_count))
+                await self._send_json(
+                    visual_to_message(
+                        visual,
+                        self._topic,
+                        session.turn_count,
+                        lesson_progress=progress.to_dict(),
+                    ),
+                )
 
             logger.info(
                 "turn_complete session_id=%s turn=%d/%d step=%d text=%s timing=%s",
@@ -312,7 +319,15 @@ class CustomOrchestrator:
                 # Send recap visual on session completion
                 recap = get_recap_visual(self._topic)
                 if recap:
-                    await self._send_json(visual_to_message(recap, self._topic, session.turn_count, is_recap=True))
+                    await self._send_json(
+                        visual_to_message(
+                            recap,
+                            self._topic,
+                            session.turn_count,
+                            is_recap=True,
+                            lesson_progress=progress.to_dict(),
+                        ),
+                    )
 
         except TutorError as exc:
             mc.end_turn()
@@ -535,7 +550,14 @@ class CustomOrchestrator:
             # Send visual for step 0 (hook) — hardcoded, don't rely on LLM tag
             visual = get_visual_for_step(topic, 0)
             if visual:
-                await self._send_json(visual_to_message(visual, topic, 0))
+                await self._send_json(
+                    visual_to_message(
+                        visual,
+                        topic,
+                        0,
+                        lesson_progress=session.lesson_progress,
+                    ),
+                )
 
             await self._send_json({"type": "greeting_complete"})
             logger.info(

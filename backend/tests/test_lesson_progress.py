@@ -62,6 +62,41 @@ def test_partial_ingredients_answer_does_not_advance():
     assert updated.failed_attempts_on_current_step == 1
 
 
+def test_partial_photosynthesis_answer_reveals_found_scene_elements():
+    state = LessonProgressState(topic="photosynthesis", current_step_id=0, visual_step_id=0)
+
+    updated = evaluate_lesson_progress(
+        "photosynthesis",
+        transcript="Plants need sunlight and water.",
+        step_hint=1,
+        state=state,
+        total_steps=7,
+    )
+
+    assert updated.current_step_id == 0
+    assert updated.visual_step_id == 0
+    assert updated.revealed_elements == ["sunlight", "water", "roots"]
+
+
+def test_revealed_scene_elements_accumulate_across_turns():
+    state = LessonProgressState(
+        topic="photosynthesis",
+        current_step_id=0,
+        visual_step_id=0,
+        revealed_elements=["sunlight", "water", "roots"],
+    )
+
+    updated = evaluate_lesson_progress(
+        "photosynthesis",
+        transcript="Also carbon dioxide from the air.",
+        step_hint=1,
+        state=state,
+        total_steps=7,
+    )
+
+    assert updated.revealed_elements == ["sunlight", "water", "roots", "carbon_dioxide"]
+
+
 def test_failed_attempts_increment_for_stuck_response():
     state = LessonProgressState(
         topic="photosynthesis",

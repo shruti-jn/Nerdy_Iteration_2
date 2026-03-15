@@ -57,7 +57,7 @@
 @media (max-width: 900px) {
   :root {
     --col-left-w: 200px;
-    --col-right-w: 280px;
+    --col-right-w: 480px;
   }
 }
 

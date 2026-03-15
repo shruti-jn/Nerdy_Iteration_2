@@ -191,6 +191,82 @@ _TOPIC_RECAPS: dict[str, VisualStep] = {
     "newtons_laws": _NEWTONS_LAWS_RECAP,
 }
 
+_PHOTOSYNTHESIS_REVEAL_ORDER = (
+    "sunlight",
+    "water",
+    "roots",
+    "carbon_dioxide",
+    "leaf",
+    "chloroplast",
+    "chlorophyll",
+    "sugar",
+    "fruit",
+    "oxygen",
+)
+
+_PHOTOSYNTHESIS_REVEAL_LABELS = {
+    "sunlight": "sunlight",
+    "water": "water",
+    "roots": "roots",
+    "carbon_dioxide": "carbon dioxide",
+    "leaf": "leaf",
+    "chloroplast": "chloroplast",
+    "chlorophyll": "chlorophyll",
+    "sugar": "sugar",
+    "fruit": "fruit",
+    "oxygen": "oxygen",
+}
+
+
+def _photosynthesis_revealed_elements(
+    lesson_progress: dict | None,
+    *,
+    is_recap: bool,
+) -> list[str]:
+    if is_recap:
+        return list(_PHOTOSYNTHESIS_REVEAL_ORDER)
+
+    if not isinstance(lesson_progress, dict):
+        return []
+
+    raw = lesson_progress.get("revealed_elements", [])
+    if not isinstance(raw, list):
+        return []
+
+    deduped: list[str] = []
+    for element in _PHOTOSYNTHESIS_REVEAL_ORDER:
+        if element in raw and element not in deduped:
+            deduped.append(element)
+    return deduped
+
+
+def _join_labels(labels: list[str]) -> str:
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+
+def _photosynthesis_caption(default_caption: str, revealed_elements: list[str], *, is_recap: bool) -> str:
+    if is_recap:
+        return "The whole photosynthesis picture is visible now, from sunlight and roots all the way to sugar, fruit, and oxygen."
+
+    if not revealed_elements:
+        return default_caption
+
+    revealed_labels = [
+        _PHOTOSYNTHESIS_REVEAL_LABELS[element]
+        for element in revealed_elements
+        if element in _PHOTOSYNTHESIS_REVEAL_LABELS
+    ]
+    return (
+        f"The picture is filling in. So far you've uncovered {_join_labels(revealed_labels)}. "
+        "Keep looking for the other parts of how a plant makes food."
+    )
+
 
 def get_total_steps(topic: str) -> int:
     """Return total number of curriculum steps for a topic."""
@@ -226,9 +302,10 @@ def visual_to_message(
     topic: str,
     turn_number: int,
     is_recap: bool = False,
+    lesson_progress: dict | None = None,
 ) -> dict:
     """Convert a VisualStep to a ``lesson_visual_update`` WebSocket message dict."""
-    return {
+    message = {
         "type": "lesson_visual_update",
         "diagram_id": topic,
         "step_id": visual.step_id,
@@ -240,3 +317,22 @@ def visual_to_message(
         "turn_number": turn_number,
         "is_recap": is_recap,
     }
+
+    if topic == "photosynthesis":
+        unlocked_elements = _photosynthesis_revealed_elements(
+            lesson_progress,
+            is_recap=is_recap,
+        )
+        message["unlocked_elements"] = unlocked_elements
+        message["progress_completed"] = len(unlocked_elements)
+        message["progress_total"] = len(_PHOTOSYNTHESIS_REVEAL_ORDER)
+        message["progress_label"] = (
+            f"Scene Pieces Unlocked: {len(unlocked_elements)}/{len(_PHOTOSYNTHESIS_REVEAL_ORDER)}"
+        )
+        message["caption"] = _photosynthesis_caption(
+            visual.caption,
+            unlocked_elements,
+            is_recap=is_recap,
+        )
+
+    return message
