@@ -21,7 +21,7 @@ export function TopicSelectView({ onSelectTopic }: Props) {
         {/* Brand */}
         <div className="topic-select__brand">
           <span className="topic-select__logo">N</span>
-          <span className="topic-select__name">Nerdy</span>
+          <span className="topic-select__name">Socrates VI</span>
         </div>
 
         {/* Heading */}

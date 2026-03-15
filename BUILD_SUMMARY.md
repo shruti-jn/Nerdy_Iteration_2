@@ -1092,3 +1092,19 @@ Why: The concept map panel was too narrow at 280px, making emoji diagrams and ca
 How: Split the single `--col-side-w` CSS variable into `--col-left-w` (260px) and `--col-right-w` (340px) so the right rail is 60px wider than before while the left rail (conversation history) is slightly narrower. Increased the concept canvas diagram font size from 22px to 28px, caption font from 12px to 13px with wider max-width (260px → 300px), and added more internal padding. Updated tablet breakpoint to match. Verified no lint errors and all 139 passing frontend tests still pass (4 pre-existing mic-pipeline failures unrelated).
 
 Refs: `frontend/src/index.css:34-35`, `frontend/src/App.css:12,57-61`, `frontend/src/components/ConceptCanvas.css:5-6,31-35,39,43`
+
+---
+
+## 2026-03-15 14:15
+
+What: Added DataChannel keepalive to `useSimliWebRTC` to prevent avatar lip-sync from stopping after the first turn.
+
+Why: The Simli WebRTC DataChannel had no keepalive between conversational turns. During the gap between the greeting and the student's first response (~30+ seconds of silence on the DC), Simli's server closed the DataChannel due to inactivity. The backend WebSocket to Simli had a 3-second keepalive (sending silent PCM frames), but the frontend DataChannel did not. This caused lip-sync audio to be silently dropped on all turns after the greeting.
+
+How: Added a 3-second interval that sends 320-byte silent PCM frames (10 ms at 16 kHz mono PCM16) on the DataChannel — matching the backend keepalive strategy. The keepalive starts when the DataChannel opens (`dc.onopen`) and stops on close or disconnect. Also improved `dc.onclose` logging to make future failures more diagnosable. Verified frontend compiles and loads without errors; all 139 passing tests still pass (4 pre-existing `mic-pipeline.test.tsx` failures unrelated).
+
+Decisions:
+- **Silent PCM keepalive over WebRTC ping/pong**: Simli's API expects PCM audio data on the DataChannel. Sending silent PCM frames (all zeros) is the same approach used by the backend WebSocket keepalive and is guaranteed to be handled correctly by Simli. WebRTC DataChannels don't have built-in ping/pong like WebSockets, so application-level keepalives are required.
+- **3-second interval**: Matches the backend `_KEEPALIVE_INTERVAL_S = 3.0`. Conservative enough to prevent any idle timeout while adding negligible bandwidth (~107 bytes/s).
+
+Refs: `frontend/src/useSimliWebRTC.ts:54-57,74-96,111-119,133-142,160-168,257`

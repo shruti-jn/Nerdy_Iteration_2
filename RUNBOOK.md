@@ -211,6 +211,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Simli avatar WebRTC signaling (C1) | ✅ Done | `connect()` does token→ICE→WS→SDP exchange; `simli_sdp_offer` handler wired; handles legacy "START" + new JSON protocol |
 | Simli TTS audio forwarding (C2) | ✅ Done | `send_audio()` forwards each TTS chunk to Simli WS for lip-sync; keepalive prevents idle timeout |
 | Simli keepalive (idle timeout fix) | ✅ Done | Background asyncio task sends 320-byte silent PCM every 3s between turns to prevent Simli closing the WS |
+| Simli DataChannel keepalive (frontend) | ✅ Done | Frontend sends 320-byte silent PCM every 3s on the WebRTC DataChannel to prevent Simli closing it between turns |
 | Frontend log timestamps | ✅ Done | `[HH:MM:SS.mmm]` prefix on all `[TutorSocket]` and `[SimliWebRTC]` console logs |
 | Avatar connecting shimmer + slow fallback | ✅ Done | Shimmer on load → "almost ready" at 8s → error state on failure → retry button → auto-recovers on stream |
 | Immediate audio playback | ✅ Done | Play each audio_chunk as it arrives (was: buffer all, play after response complete) |

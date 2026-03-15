@@ -674,3 +674,73 @@ def test_ws_duplicate_start_lesson_ignored(
         ws.send_text(json.dumps({"type": "barge_in"}))
         ack = json.loads(ws.receive_text())
         assert ack["type"] == "barge_in_ack"
+
+
+@pytest.mark.contract
+@patch("pipeline.orchestrator_custom.CartesiaTTSAdapter")
+@patch("pipeline.orchestrator_custom.DeepgramTTSAdapter")
+@patch("pipeline.orchestrator_custom.GroqLLMEngine")
+@patch("pipeline.orchestrator_custom.DeepgramSTTAdapter")
+def test_ws_session_restore_sends_welcome_back(
+    mock_stt_cls, mock_llm_cls, mock_deepgram_tts_cls, mock_cartesia_tts_cls
+):
+    """Restored sessions immediately send a welcome-back prompt and repeat the last tutor question."""
+    import main as main_module
+
+    mock_stt = MagicMock()
+    mock_stt.start = AsyncMock()
+    mock_stt.send_audio = AsyncMock()
+    mock_stt.finish = AsyncMock(return_value="")
+    mock_stt.cancel = AsyncMock()
+    mock_stt_cls.return_value = mock_stt
+
+    mock_llm = MagicMock()
+    mock_llm.cancel = AsyncMock()
+    mock_llm_cls.return_value = mock_llm
+
+    async def mock_tts_stream(sentence, metrics):
+        metrics.start("tts")
+        metrics.mark_first("tts")
+        yield b"\x00\x01" * 50
+        metrics.end("tts")
+
+    mock_tts = MagicMock()
+    mock_tts.stream = mock_tts_stream
+    mock_tts.cancel = AsyncMock()
+    mock_deepgram_tts_cls.return_value = mock_tts
+    mock_cartesia_tts_cls.return_value = mock_tts
+
+    restored_record = {
+        "session_id": "resume-123",
+        "topic": "photosynthesis",
+        "history": [
+            {"role": "assistant", "content": "What do you think plants need to make food?"}
+        ],
+        "summary": "",
+        "turn_count": 2,
+        "turns_since_compression": 0,
+        "updated_at": time.time(),
+    }
+
+    with patch.object(main_module.session_store, "load", AsyncMock(return_value=restored_record)):
+        client = TestClient(app)
+        with client.websocket_connect("/session?topic=photosynthesis&session_id=resume-123") as ws:
+            first = json.loads(ws.receive_text())
+            assert first["type"] == "session_restore"
+
+            messages = []
+            for _ in range(30):
+                raw = ws.receive_text()
+                msg = json.loads(raw)
+                messages.append(msg)
+                if msg["type"] == "greeting_complete":
+                    break
+
+            types = [m["type"] for m in messages]
+            assert "audio_chunk" in types
+            assert "tutor_text_chunk" in types
+            welcome_msg = next(m for m in messages if m["type"] == "tutor_text_chunk")
+            assert welcome_msg.get("is_greeting") is True
+            assert "Welcome back!" in welcome_msg["text"]
+            assert "What do you think plants need to make food?" in welcome_msg["text"]
+            assert types[-1] == "greeting_complete"

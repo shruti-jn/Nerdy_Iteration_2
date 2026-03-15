@@ -8,6 +8,7 @@ import { AvatarFeed } from "./components/AvatarFeed";
 import { TutorResponse } from "./components/TutorResponse";
 import { BottomBar } from "./components/BottomBar";
 import { TopicSelectView } from "./components/TopicSelectView";
+import { GettingReadyView } from "./components/GettingReadyView";
 import { CelebrationOverlay } from "./components/CelebrationOverlay";
 import { useSessionStore } from "./useSessionStore";
 import { renderHook, act as hookAct } from "@testing-library/react";
@@ -21,9 +22,9 @@ describe("T4-01: App renders (topic-select view)", () => {
     expect(screen.getByText("What do you want to learn today?")).toBeInTheDocument();
   });
 
-  it("renders the Nerdy brand on topic select view", () => {
+  it("renders the Socrates VI brand on topic select view", () => {
     render(<App />);
-    expect(screen.getByText("Nerdy")).toBeInTheDocument();
+    expect(screen.getByText("Socrates VI")).toBeInTheDocument();
   });
 
   it("shows Grade 8 badge on topic select", () => {
@@ -149,13 +150,53 @@ describe("T4-06: ConversationHistory renders entries", () => {
     expect(screen.getByText("What is ATP?")).toBeInTheDocument();
   });
 
-  it("renders tutor entry with Nerdy label", () => {
+  it("renders tutor entry with Socrates VI label", () => {
     render(
       <ConversationHistory
         history={[{ id: "2", role: "tutor", text: "What do you think ATP does?", timestamp: 0 }]}
       />
     );
-    expect(screen.getByText("Nerdy")).toBeInTheDocument();
+    expect(screen.getByText("Socrates VI")).toBeInTheDocument();
+  });
+});
+
+describe("T4-06B: GettingReadyView resume actions", () => {
+  const noop = () => {};
+
+  it("shows both Start Lesson and Continue Lesson when a session can be resumed", () => {
+    render(
+      <GettingReadyView
+        topic="Photosynthesis"
+        avatarState="live"
+        wsConnected={true}
+        canContinue={true}
+        videoRef={{ current: null }}
+        onBack={noop}
+        onStart={noop}
+        onContinue={noop}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Start Lesson" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue Lesson" })).toBeInTheDocument();
+  });
+
+  it("shows only Start Lesson for a brand-new session", () => {
+    render(
+      <GettingReadyView
+        topic="Photosynthesis"
+        avatarState="live"
+        wsConnected={true}
+        canContinue={false}
+        videoRef={{ current: null }}
+        onBack={noop}
+        onStart={noop}
+        onContinue={noop}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Start Lesson" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue Lesson" })).not.toBeInTheDocument();
   });
 });
 
@@ -630,7 +671,7 @@ describe("T4-17: BottomBar tutor-greeting mode", () => {
     render(
       <BottomBar mode="tutor-greeting" latencyMs={null} onMicPress={noop} onMicRelease={noop} onBargeIn={noop} />
     );
-    expect(screen.getByText("Socrates 6 is introducing the topic…")).toBeInTheDocument();
+    expect(screen.getByText("Socrates VI is introducing the topic…")).toBeInTheDocument();
   });
 
   it("interrupt button is disabled during tutor-greeting", () => {

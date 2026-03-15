@@ -16,7 +16,7 @@ export function TopBar({ store }: Props) {
     <header className="topbar">
       <div className="topbar__brand">
         <span className="topbar__logo">N</span>
-        <span className="topbar__name">Nerdy</span>
+        <span className="topbar__name">Socrates VI</span>
       </div>
 
       <div className="topbar__topic">

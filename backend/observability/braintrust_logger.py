@@ -14,6 +14,20 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+try:
+    from braintrust import init_logger
+except Exception:  # pragma: no cover - fallback for missing optional dependency
+    def init_logger(*args, **kwargs):
+        raise RuntimeError("braintrust is not installed")
+from observability.scorers import (
+    score_ends_with_question,
+    score_encouragement,
+    score_no_direct_answer,
+    score_no_negation,
+    score_readability,
+    score_response_length,
+)
+
 logger = logging.getLogger("tutor")
 
 
@@ -25,11 +39,14 @@ class BraintrustLogger:
     def __init__(self) -> None:
         self._logger = None
         try:
-            from braintrust import init_logger
             self._logger = init_logger(project="ai-video-tutor")
             logger.info("Braintrust logger initialized (project=ai-video-tutor)")
         except Exception as exc:
             logger.info("Braintrust not configured — per-turn scoring disabled: %s", exc)
+
+    @property
+    def logger(self):
+        return self._logger
 
     @property
     def is_enabled(self) -> bool:
@@ -38,12 +55,6 @@ class BraintrustLogger:
     def log_turn(self, turn_data: Dict[str, Any]) -> Optional[str]:
         if self._logger is None:
             return None
-
-        from observability.scorers import (
-            score_ends_with_question, score_encouragement,
-            score_no_direct_answer, score_no_negation,
-            score_readability, score_response_length,
-        )
 
         response: str = turn_data["tutor_response"]
         scores: Dict[str, float | int] = {

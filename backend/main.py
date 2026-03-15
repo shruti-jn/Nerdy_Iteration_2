@@ -224,6 +224,8 @@ async def session_handler(ws: WebSocket):
                 except Exception as exc:
                     logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
                     await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
+            if any(msg.get("role") == "assistant" and msg.get("content", "").strip() for msg in session_mgr.history):
+                await orchestrator.handle_welcome_back(session_mgr, topic)
         else:
             await _send_json(ws, {"type": "session_start", "session_id": session_id, "topic": topic, "total_turns": MAX_TURNS, "avatar_provider": avatar_provider})
 

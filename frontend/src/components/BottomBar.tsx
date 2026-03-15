@@ -81,7 +81,7 @@ export function BottomBar({
           <MicIcon active={isRecording} />
         </button>
         <span className="mic-btn__hint">
-          {isRecording ? "Release to send" : isGreeting ? "Socrates 6 is introducing the topic…" : isTutorSpeaking ? "Tutor speaking…" : "Hold to speak"}
+          {isRecording ? "Release to send" : isGreeting ? "Socrates VI is introducing the topic…" : isTutorSpeaking ? "Tutor speaking…" : "Hold to speak"}
         </span>
       </div>
 

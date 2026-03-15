@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import type { SessionStore, AvatarProvider } from "./types";
 
 /** Returns a compact timestamp prefix: [HH:MM:SS.mmm] */
@@ -19,8 +19,8 @@ export interface TutorSocketOptions {
   topicId?: string;
   /** When false, the WebSocket will not auto-connect (and will disconnect if connected). */
   enabled?: boolean;
-  /** Called once when the server sends session_start — use to initiate Simli WebRTC */
-  onSessionStart?: () => void;
+  /** Called when the server sends session_start or session_restore. */
+  onSessionStart?: (kind: "start" | "restore") => void;
   /** Called with the avatar provider from session_start/session_restore */
   onAvatarProvider?: (provider: AvatarProvider) => void;
   /** Called with raw PCM bytes for each audio_chunk — use to forward to Simli DataChannel */
@@ -36,6 +36,7 @@ export interface TutorSocketOptions {
 export interface TutorSocket {
   connect(): void;
   disconnect(): void;
+  reconnect(opts?: { freshSession?: boolean }): void;
   /** Send a binary PCM Int16 chunk from the mic AudioWorklet */
   sendAudioChunk(chunk: ArrayBuffer): void;
   /** Signal that the student has finished speaking (end-of-utterance) */
@@ -44,6 +45,7 @@ export interface TutorSocket {
   sendStartLesson(): void;
   sendBargeIn(): void;
   isConnected: boolean;
+  sessionKind: "start" | "restore" | null;
   /** The underlying WebSocket, for use by Simli signaling */
   readonly ws: WebSocket | null;
 }
@@ -64,7 +66,20 @@ type ServerMessage =
   | { type: "lesson_visual_update"; diagram_id: string; step_id: number; step_label: string; total_steps: number; highlight_keys?: string[]; caption?: string; emoji_diagram: string; turn_number: number; is_recap: boolean };
 
 /** localStorage key for persisting the session ID across page refreshes. */
-const SESSION_ID_KEY = "tutorSessionId";
+export const SESSION_ID_KEY = "tutorSessionId";
+export const SESSION_TOPIC_KEY = "tutorSessionTopicId";
+export const SESSION_AVATAR_KEY = "tutorSessionAvatar";
+
+function getRequestedAvatarProvider(): AvatarProvider {
+  const avatarParam = new URLSearchParams(window.location.search).get("avatar");
+  return avatarParam === "spatialreal" ? "spatialreal" : "simli";
+}
+
+function clearPersistedSession(): void {
+  localStorage.removeItem(SESSION_ID_KEY);
+  localStorage.removeItem(SESSION_TOPIC_KEY);
+  localStorage.removeItem(SESSION_AVATAR_KEY);
+}
 
 /**
  * Manages a WebSocket connection to the tutor-server.
@@ -78,10 +93,13 @@ const SESSION_ID_KEY = "tutorSessionId";
 export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const wsRef = useRef<WebSocket | null>(null);
   const connectedRef = useRef(false);
+  const [isConnectedState, setIsConnectedState] = useState(false);
+  const [sessionKind, setSessionKind] = useState<"start" | "restore" | null>(null);
   const turnStartRef = useRef<number>(0);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const manualDisconnectRef = useRef(false);
+  const freshSessionRef = useRef(false);
 
   // ── Stabilize opts via ref so callbacks don't depend on object identity ──
   // Without this, handleMessage/connect are recreated every render because
@@ -95,13 +113,27 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     const params = new URLSearchParams();
     if (opts.topicId) params.set("topic", opts.topicId);
     const savedSessionId = localStorage.getItem(SESSION_ID_KEY);
-    if (savedSessionId) params.set("session_id", savedSessionId);
-    // Forward ?avatar= URL param so the backend can switch avatar providers
-    const urlAvatar = new URLSearchParams(window.location.search).get("avatar");
-    if (urlAvatar) params.set("avatar", urlAvatar);
+    const savedTopicId = localStorage.getItem(SESSION_TOPIC_KEY);
+    const savedAvatar = localStorage.getItem(SESSION_AVATAR_KEY);
+    const requestedAvatar = getRequestedAvatarProvider();
+    if (
+      !freshSessionRef.current &&
+      savedSessionId &&
+      savedTopicId &&
+      opts.topicId &&
+      savedTopicId === opts.topicId &&
+      savedAvatar === requestedAvatar
+    ) {
+      params.set("session_id", savedSessionId);
+    }
+    if (requestedAvatar) params.set("avatar", requestedAvatar);
     const qs = params.toString() ? `?${params.toString()}` : "";
-    return opts.serverUrl ??
-      `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/session${qs}`;
+    if (opts.serverUrl) {
+      if (!qs) return opts.serverUrl;
+      const separator = opts.serverUrl.includes("?") ? "&" : "?";
+      return `${opts.serverUrl}${separator}${params.toString()}`;
+    }
+    return `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/session${qs}`;
   }, [opts.serverUrl, opts.topicId]);
 
   // Store the URL in a ref so `connect` doesn't depend on the string value.
@@ -204,8 +236,12 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
       if (msg.type === "session_start") {
         console.debug(ts(), "[TutorSocket] session_start received, session_id:", msg.session_id, "topic:", msg.topic, "avatar_provider:", msg.avatar_provider);
-        // Persist session ID for reconnection on page refresh
+        const persistedAvatar = msg.avatar_provider ?? getRequestedAvatarProvider();
+        freshSessionRef.current = false;
+        setSessionKind("start");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
+        if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
+        localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
         store.setMode("idle");
         // Set initial turn info from server if provided
         if (msg.total_turns) {
@@ -215,11 +251,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
         }
-        onSessionStart?.();
+        onSessionStart?.("start");
       } else if (msg.type === "session_restore") {
         console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count, "avatar_provider:", msg.avatar_provider);
-        // Persist session ID (may be the same, but ensures consistency)
+        const persistedAvatar = localStorage.getItem(SESSION_AVATAR_KEY) ?? msg.avatar_provider ?? getRequestedAvatarProvider();
+        freshSessionRef.current = false;
+        setSessionKind("restore");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
+        if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
+        localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
         // Notify App which avatar provider is active
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
@@ -236,7 +276,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           msg.turn_count ?? 0,
           msg.total_turns ?? 15,
         );
-        onSessionStart?.();
+        onSessionStart?.("restore");
       } else if (msg.type === "tutor_text_chunk") {
         // Extract per-stage timing if present.
         // Use TTF (time-to-first) metrics for STT/LLM/TTS — these reflect
@@ -309,8 +349,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       } else if (msg.type === "session_complete") {
         store.setTurnInfo(msg.turn_number, msg.total_turns);
         store.setSessionComplete(true);
-        // Clear persisted session — lesson is done, no reconnection needed
-        localStorage.removeItem(SESSION_ID_KEY);
+        clearPersistedSession();
         console.log(ts(), "[TutorSocket] Session complete:", msg.message);
       } else if (msg.type === "greeting_complete") {
         // Greeting audio is done — ensure mode returns to idle so mic enables
@@ -392,10 +431,11 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       clearReconnectTimer();
       reconnectAttemptRef.current = 0;
       connectedRef.current = true;
+      setIsConnectedState(true);
       // Trigger a store update so React re-renders and reads isConnected=true
       setTimeout(() => {
         optsRef.current.store.setMode("idle");
-        optsRef.current.onSessionStart?.();
+        optsRef.current.onSessionStart?.("start");
         // No real avatar in mock mode — signal error so fallback appears immediately.
         // Use a silent error message that the UI can suppress.
         setTimeout(() => {
@@ -417,6 +457,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       // from clobbering a newer connection's state.
       if (wsRef.current !== ws) return;
       connectedRef.current = true;
+      setIsConnectedState(true);
       clearReconnectTimer();
       reconnectAttemptRef.current = 0;
       optsRef.current.store.setError(null);
@@ -433,6 +474,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       // Simli signaling with "WebSocket not open — cannot connect".
       if (wsRef.current !== ws) return;
       connectedRef.current = false;
+      setIsConnectedState(false);
       wsRef.current = null;
       if (manualDisconnectRef.current || optsRef.current.enabled === false || optsRef.current._useMock) {
         return;
@@ -456,6 +498,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     ws.onerror = () => {
       if (wsRef.current !== ws) return;
       connectedRef.current = false;
+      setIsConnectedState(false);
     };
   }, [handleMessage]);
 
@@ -480,9 +523,24 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     }
     wsRef.current = null;
     connectedRef.current = false;
+    setIsConnectedState(false);
     try { audioCtxRef.current?.close(); } catch { /* may already be closed */ }
     audioCtxRef.current = null;
   }, []);
+
+  const reconnect = useCallback((reconnectOpts?: { freshSession?: boolean }) => {
+    if (reconnectOpts?.freshSession) {
+      clearPersistedSession();
+      freshSessionRef.current = true;
+      setSessionKind(null);
+    } else {
+      freshSessionRef.current = false;
+    }
+    serverUrlRef.current = buildServerUrl();
+    disconnect();
+    manualDisconnectRef.current = false;
+    connect();
+  }, [buildServerUrl, connect, disconnect]);
 
   const sendAudioChunk = useCallback((chunk: ArrayBuffer) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -618,13 +676,13 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   return {
     connect,
     disconnect,
+    reconnect,
     sendAudioChunk,
     sendEndOfUtterance,
     sendStartLesson,
     sendBargeIn,
-    get isConnected() {
-      return connectedRef.current;
-    },
+    isConnected: isConnectedState,
+    sessionKind,
     get ws() {
       return wsRef.current;
     },

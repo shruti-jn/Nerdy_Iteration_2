@@ -356,6 +356,55 @@ class CustomOrchestrator:
         finish_gen(output=result)
         return result
 
+    async def _stream_text_audio(
+        self,
+        text: str,
+        mc: MetricsCollector,
+        label: str,
+    ) -> None:
+        """Stream a prebuilt text response through TTS and avatar channels."""
+        avatar_started = False
+        sent_tts_start = time.monotonic_ns()
+        sent_first_byte_ns = None
+
+        async for audio_chunk in self._tts.stream(text, mc):
+            if sent_first_byte_ns is None:
+                sent_first_byte_ns = time.monotonic_ns()
+            b64 = base64.b64encode(audio_chunk).decode("ascii")
+            await self._send_json({"type": "audio_chunk", "data": b64})
+            if self._simli is not None and self._avatar_provider == "simli":
+                try:
+                    if not avatar_started:
+                        mc.start("avatar")
+                        avatar_started = True
+                    await self._simli.send_audio(audio_chunk)
+                    mc.mark_first("avatar")
+                except Exception as exc:
+                    logger.warning(
+                        "simli_audio_forward_failed session_id=%s %s error=%s",
+                        self._session_id,
+                        label,
+                        exc,
+                    )
+
+        sent_tts_end = time.monotonic_ns()
+        sent_ttfa = (
+            (sent_first_byte_ns - sent_tts_start) / 1_000_000 if sent_first_byte_ns else None
+        )
+        sent_dur = (sent_tts_end - sent_tts_start) / 1_000_000
+        logger.info(
+            "tts_sentence session_id=%s %s idx=1 ttfa_ms=%.1f duration_ms=%.1f chars=%d text=%s",
+            self._session_id,
+            label,
+            sent_ttfa if sent_ttfa is not None else -1,
+            sent_dur,
+            len(text),
+            text[:60],
+        )
+
+        if self._simli is not None and self._avatar_provider == "simli" and avatar_started:
+            mc.end("avatar")
+
     async def handle_interrupt(self, session: SessionManager) -> None:
         """Handle barge-in: cancel STT/LLM/TTS and stop avatar."""
         await self._stt.cancel()
@@ -452,6 +501,69 @@ class CustomOrchestrator:
         except Exception as exc:
             mc.end_turn()
             logger.error("greeting_error session_id=%s error=%s", self._session_id, exc)
+            await self._send_json({
+                "type": "error",
+                "code": "GREETING_FAILED",
+                "message": str(exc),
+            })
+        finally:
+            finish_trace()
+
+    async def handle_welcome_back(self, session: SessionManager, topic: str) -> None:
+        """Speak a short resume prompt after a restored session reconnects."""
+        self._topic = topic
+
+        last_prompt = next(
+            (
+                msg["content"].replace(" [interrupted]", "").strip()
+                for msg in reversed(session.history)
+                if msg.get("role") == "assistant" and msg.get("content", "").strip()
+            ),
+            "",
+        )
+        if not last_prompt:
+            return
+
+        welcome_text = (
+            f'Welcome back! Last time, I asked: "{last_prompt}" '
+            "Let's pick up right there. What do you think?"
+        )
+
+        finish_trace = trace_span(
+            "welcome_back",
+            metadata={
+                "session_id": self._session_id,
+                "topic": topic,
+                "turn_number": session.turn_count,
+            },
+        )
+
+        mc = MetricsCollector()
+        mc.start_turn()
+        try:
+            await self._stream_text_audio(welcome_text, mc, label="welcome-back")
+            mc.end_turn()
+            timing = mc.to_dict()
+            timing["turn_number"] = session.turn_count
+            timing["total_turns"] = self._max_turns
+            self._last_metrics = timing
+            await self._send_json({
+                "type": "tutor_text_chunk",
+                "text": welcome_text,
+                "timing": timing,
+                "is_greeting": True,
+            })
+            await self._send_json({"type": "greeting_complete"})
+            logger.info(
+                "welcome_back_complete session_id=%s turn=%d text=%s timing=%s",
+                self._session_id,
+                session.turn_count,
+                welcome_text[:80],
+                timing,
+            )
+        except Exception as exc:
+            mc.end_turn()
+            logger.error("welcome_back_error session_id=%s error=%s", self._session_id, exc)
             await self._send_json({
                 "type": "error",
                 "code": "GREETING_FAILED",

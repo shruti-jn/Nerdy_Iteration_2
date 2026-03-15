@@ -23,7 +23,7 @@ AVAILABLE_TOPICS: list[str] = list(_TOPIC_SCAFFOLDS.keys())
 # so the LLM generates a warm opening within the Socratic persona.
 _GREETING_TEMPLATE = (
     "[Greeting — no student has spoken yet] "
-    "Introduce yourself as Socrates 6. Welcome the student to today's lesson on {topic}. "
+    "Introduce yourself as Socrates VI. Welcome the student to today's lesson on {topic}. "
     "Start with a mystery or surprising question that hooks their curiosity "
     "(use the STEP 0 — THE HOOK from the topic scaffold). "
     "Be warm and a little funny. Keep it under 40 words total."

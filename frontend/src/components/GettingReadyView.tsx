@@ -7,6 +7,7 @@ interface Props {
   topic: string;
   avatarState: AvatarConnectionState;
   wsConnected: boolean;
+  canContinue: boolean;
   videoRef: React.RefObject<HTMLVideoElement>;
   /** Which avatar provider is active */
   avatarProvider?: AvatarProvider;
@@ -14,11 +15,12 @@ interface Props {
   containerRef?: React.RefObject<HTMLDivElement>;
   onBack: () => void;
   onStart: () => void;
+  onContinue: () => void;
   /** Called when the <video> element starts playing — signals avatar is truly live */
   onVideoPlaying?: () => void;
 }
 
-export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, avatarProvider = "simli", containerRef, onBack, onStart, onVideoPlaying }: Props) {
+export function GettingReadyView({ topic, avatarState, wsConnected, canContinue, videoRef, avatarProvider = "simli", containerRef, onBack, onStart, onContinue, onVideoPlaying }: Props) {
   const avatarReady = avatarState === "live";
   const allReady = wsConnected && avatarReady;
 
@@ -102,14 +104,31 @@ export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, av
           <Step label="Ready!" done={allReady} active={false} />
         </div>
 
-        {/* Start Lesson button */}
-        <button
-          className={`getting-ready__start ${canStart ? "getting-ready__start--enabled" : ""}`}
-          disabled={!canStart}
-          onClick={onStart}
-        >
-          Start Lesson
-        </button>
+        {canContinue && (
+          <p className="getting-ready__resume-note">
+            We found your earlier lesson. Continue where you left off, or start over from the beginning.
+          </p>
+        )}
+
+        <div className={`getting-ready__actions ${canContinue ? "getting-ready__actions--split" : ""}`}>
+          <button
+            className={`getting-ready__start ${canStart ? "getting-ready__start--enabled" : ""} ${canContinue ? "getting-ready__start--secondary" : ""}`}
+            disabled={!canStart}
+            onClick={onStart}
+          >
+            Start Lesson
+          </button>
+
+          {canContinue && (
+            <button
+              className={`getting-ready__start ${canStart ? "getting-ready__start--enabled" : ""}`}
+              disabled={!canStart}
+              onClick={onContinue}
+            >
+              Continue Lesson
+            </button>
+          )}
+        </div>
 
         {/* Fallback: start without avatar */}
         {showFallback && !avatarReady && wsConnected && (

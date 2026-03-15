@@ -119,6 +119,8 @@ beforeEach(() => {
     state: "running",
     sampleRate: 16000,
   }));
+  localStorage.clear();
+  window.history.replaceState({}, "", "/");
 });
 
 afterEach(() => {
@@ -203,6 +205,31 @@ describe("useTutorSocket", () => {
       await vi.waitFor(() => expect(MockWebSocket.instances.length).toBe(2));
       expect(store.setError).toHaveBeenCalled();
     });
+
+    it("only restores when saved topic and avatar still match", async () => {
+      localStorage.setItem("tutorSessionId", "saved-session");
+      localStorage.setItem("tutorSessionTopicId", "photosynthesis");
+      localStorage.setItem("tutorSessionAvatar", "simli");
+
+      const store = makeStore({ topicId: "photosynthesis" as const });
+      renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
+
+      await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&session_id=saved-session&avatar=simli");
+    });
+
+    it("does not restore when the avatar provider changes", async () => {
+      localStorage.setItem("tutorSessionId", "saved-session");
+      localStorage.setItem("tutorSessionTopicId", "photosynthesis");
+      localStorage.setItem("tutorSessionAvatar", "simli");
+      window.history.replaceState({}, "", "/?avatar=spatialreal");
+
+      const store = makeStore({ topicId: "photosynthesis" as const });
+      renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
+
+      await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=spatialreal");
+    });
   });
 
   describe("Sending messages", () => {
@@ -281,7 +308,7 @@ describe("useTutorSocket", () => {
     it("session_start calls store.setMode('idle') and onSessionStart", async () => {
       const store = makeStore();
       const onSessionStart = vi.fn();
-      renderHook(() =>
+      const { result } = renderHook(() =>
         useTutorSocket({ store, serverUrl: "ws://test/session", onSessionStart })
       );
 
@@ -293,7 +320,59 @@ describe("useTutorSocket", () => {
       });
 
       expect(store.setMode).toHaveBeenCalledWith("idle");
-      expect(onSessionStart).toHaveBeenCalled();
+      expect(onSessionStart).toHaveBeenCalledWith("start");
+      expect(result.current.sessionKind).toBe("start");
+    });
+
+    it("session_restore restores history and marks the session as resumable", async () => {
+      localStorage.setItem("tutorSessionAvatar", "simli");
+      const store = makeStore();
+      const onSessionStart = vi.fn();
+      const { result } = renderHook(() =>
+        useTutorSocket({ store, serverUrl: "ws://test/session", onSessionStart })
+      );
+
+      await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+      const ws = MockWebSocket.instances[0];
+
+      act(() => {
+        ws._receiveMessage({
+          type: "session_restore",
+          session_id: "resume-123",
+          topic: "photosynthesis",
+          turn_count: 4,
+          total_turns: 15,
+          avatar_provider: "simli",
+          history: [{ role: "assistant", content: "What do you think plants need?" }],
+        });
+      });
+
+      expect(store.restoreSession).toHaveBeenCalled();
+      expect(onSessionStart).toHaveBeenCalledWith("restore");
+      expect(result.current.sessionKind).toBe("restore");
+    });
+
+    it("reconnect with freshSession clears persisted session before reconnecting", async () => {
+      localStorage.setItem("tutorSessionId", "saved-session");
+      localStorage.setItem("tutorSessionTopicId", "photosynthesis");
+      localStorage.setItem("tutorSessionAvatar", "simli");
+
+      const store = makeStore({ topicId: "photosynthesis" as const });
+      const { result } = renderHook(() =>
+        useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" })
+      );
+
+      await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+
+      act(() => {
+        result.current.reconnect({ freshSession: true });
+      });
+
+      await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(2));
+      expect(localStorage.getItem("tutorSessionId")).toBeNull();
+      expect(localStorage.getItem("tutorSessionTopicId")).toBeNull();
+      expect(localStorage.getItem("tutorSessionAvatar")).toBeNull();
+      expect(MockWebSocket.instances[1]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli");
     });
 
     it("error message calls store.setMode('idle') and logs", async () => {

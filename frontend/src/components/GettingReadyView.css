@@ -157,6 +157,15 @@
   margin-bottom: 32px;
 }
 
+.getting-ready__resume-note {
+  max-width: 360px;
+  margin: 0 0 16px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .step {
   display: flex;
   align-items: center;
@@ -196,6 +205,17 @@
 }
 
 /* ── Start button ────────────────────────────────────────────────────────── */
+.getting-ready__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.getting-ready__actions--split {
+  width: 100%;
+  max-width: 320px;
+}
+
 .getting-ready__start {
   width: 280px;
   padding: 14px 0;
@@ -209,6 +229,20 @@
   color: var(--text-muted);
   transition: all var(--dur-normal) var(--ease);
   outline: none;
+}
+
+.getting-ready__start--secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  box-shadow: none;
+  animation: none;
+}
+
+.getting-ready__start--secondary.getting-ready__start--enabled:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  box-shadow: none;
 }
 
 .getting-ready__start:disabled {

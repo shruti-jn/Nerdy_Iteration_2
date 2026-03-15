@@ -35,7 +35,7 @@ export function ConversationHistory({ history }: Props) {
             style={{ animationDelay: "0ms" }}
           >
             <div className="conv-entry__role">
-              {entry.role === "student" ? "You" : "Nerdy"}
+              {entry.role === "student" ? "You" : "Socrates VI"}
             </div>
             <div className="conv-entry__text">{entry.text}</div>
           </div>

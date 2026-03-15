@@ -6,6 +6,7 @@ Run: python -m evals.validate_socratic_prompt
 """
 
 import json
+import math
 import os
 import sys
 import time
@@ -39,6 +40,101 @@ class TurnResult:
     readability: float
     encouragement: float
     response_length: int
+    llm_latency_ms: float
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Return a linear-interpolated percentile from a sorted list."""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+
+    rank = (len(sorted_values) - 1) * (pct / 100.0)
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return float(sorted_values[lower])
+
+    lower_value = float(sorted_values[lower])
+    upper_value = float(sorted_values[upper])
+    weight = rank - lower
+    return lower_value + (upper_value - lower_value) * weight
+
+
+def _summarize_results(results: list[TurnResult]) -> dict[str, float]:
+    total = len(results)
+    if total == 0:
+        return {
+            "total_turns": 0,
+            "question_pct": 0.0,
+            "no_answer_pct": 0.0,
+            "no_negation_pct": 0.0,
+            "avg_readability": 0.0,
+            "encouragement_pct": 0.0,
+            "avg_word_count": 0.0,
+            "llm_latency_p50_ms": 0.0,
+            "llm_latency_p95_ms": 0.0,
+        }
+
+    latencies = sorted(r.llm_latency_ms for r in results)
+    return {
+        "total_turns": total,
+        "question_pct": sum(1 for r in results if r.ends_with_question == 1.0) / total * 100,
+        "no_answer_pct": sum(1 for r in results if r.no_direct_answer == 1.0) / total * 100,
+        "no_negation_pct": sum(1 for r in results if r.no_negation == 1.0) / total * 100,
+        "avg_readability": sum(r.readability for r in results) / total,
+        "encouragement_pct": sum(1 for r in results if r.encouragement == 1.0) / total * 100,
+        "avg_word_count": sum(r.response_length for r in results) / total,
+        "llm_latency_p50_ms": _percentile(latencies, 50),
+        "llm_latency_p95_ms": _percentile(latencies, 95),
+    }
+
+
+def _passes_thresholds(summary: dict[str, float]) -> bool:
+    return (
+        summary["question_pct"] == 100.0
+        and summary["no_answer_pct"] == 100.0
+        and summary["no_negation_pct"] == 100.0
+        and 4.0 <= summary["avg_readability"] <= 9.0
+    )
+
+
+def write_markdown_summary(output_path: str, all_results: dict[str, list[TurnResult]], timestamp: str, model: str) -> None:
+    """Write a human-readable markdown summary for the eval artifacts."""
+    lines = [
+        "# Socratic Validation Summary",
+        "",
+        f"- Timestamp: {timestamp}",
+        f"- Model: {model}",
+        "",
+        "## Per-topic results",
+        "",
+        "| Topic | Turns | Question % | No answer % | No negation % | p50 latency (ms) | p95 latency (ms) |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+
+    overall_pass = True
+    for topic, results in all_results.items():
+        summary = _summarize_results(results)
+        topic_pass = _passes_thresholds(summary)
+        overall_pass = overall_pass and topic_pass
+        lines.append(
+            f"| {topic} | {summary['total_turns']} | {summary['question_pct']:.1f} | "
+            f"{summary['no_answer_pct']:.1f} | {summary['no_negation_pct']:.1f} | "
+            f"{summary['llm_latency_p50_ms']:.1f} | {summary['llm_latency_p95_ms']:.1f} |"
+        )
+
+    lines.extend([
+        "",
+        "## Overall verdict",
+        "",
+        f"**{'PASS' if overall_pass else 'FAIL'}**",
+        "",
+    ])
+
+    with open(output_path, "w") as f:
+        f.write("\n".join(lines))
 
 
 # Simulated student responses for photosynthesis (30 turns)
@@ -172,6 +268,7 @@ def run_conversation(topic: str, student_turns: list[str], model: str = "llama-3
             readability=score_readability(full_response),
             encouragement=score_encouragement(full_response),
             response_length=score_response_length(full_response),
+            llm_latency_ms=elapsed_ms,
         )
         results.append(result)
 
@@ -187,7 +284,7 @@ def print_report(topic: str, results: list[TurnResult]):
     total = len(results)
     if total == 0:
         print(f"\n  No results for {topic}")
-        return
+        return False
 
     question_pct = sum(1 for r in results if r.ends_with_question == 1.0) / total * 100
     no_answer_pct = sum(1 for r in results if r.no_direct_answer == 1.0) / total * 100
@@ -277,20 +374,16 @@ def main():
     for topic, results in all_results.items():
         data["topics"][topic] = {
             "turns": [asdict(r) for r in results],
-            "summary": {
-                "total_turns": len(results),
-                "question_pct": sum(1 for r in results if r.ends_with_question == 1.0) / max(len(results), 1) * 100,
-                "no_answer_pct": sum(1 for r in results if r.no_direct_answer == 1.0) / max(len(results), 1) * 100,
-                "no_negation_pct": sum(1 for r in results if r.no_negation == 1.0) / max(len(results), 1) * 100,
-                "avg_readability": sum(r.readability for r in results) / max(len(results), 1),
-                "encouragement_pct": sum(1 for r in results if r.encouragement == 1.0) / max(len(results), 1) * 100,
-                "avg_word_count": sum(r.response_length for r in results) / max(len(results), 1),
-            },
+            "summary": _summarize_results(results),
         }
 
     with open(output_path, "w") as f:
         json.dump(data, f, indent=2)
     print(f"\nResults saved to {output_path}")
+
+    markdown_path = os.path.join(output_dir, "socratic_validation_summary.md")
+    write_markdown_summary(markdown_path, all_results, data["timestamp"], data["model"])
+    print(f"Markdown summary saved to {markdown_path}")
 
     # Overall verdict
     overall = "PASS" if (photo_pass and newton_pass) else "FAIL"
