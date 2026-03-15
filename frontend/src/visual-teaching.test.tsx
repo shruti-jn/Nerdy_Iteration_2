@@ -24,11 +24,11 @@ const MOCK_VISUAL: LessonVisualState = {
   stepLabel: "The Hook",
   totalSteps: 7,
   highlightKeys: ["water"],
-  unlockedElements: ["sunlight", "water", "roots"],
-  progressCompleted: 3,
-  progressTotal: 10,
-  progressLabel: "Scene Pieces Unlocked: 3/10",
-  caption: "The picture is filling in. So far you've uncovered sunlight, water, and roots.",
+  unlockedElements: ["sunlight", "water"],
+  progressCompleted: 2,
+  progressTotal: 8,
+  progressLabel: "Photosynthesis Clues: 2/8",
+  caption: "You've started the recipe with sunlight and water. Keep looking for the ingredients that go into photosynthesis.",
   emojiDiagram: "🌱 → ☀️ + 💧",
   turnNumber: 3,
   isRecap: false,
@@ -42,20 +42,18 @@ const MOCK_RECAP_VISUAL: LessonVisualState = {
   unlockedElements: [
     "sunlight",
     "water",
-    "roots",
     "carbon_dioxide",
     "leaf",
     "chloroplast",
     "chlorophyll",
     "sugar",
-    "fruit",
     "oxygen",
   ],
-  progressCompleted: 10,
-  progressTotal: 10,
-  progressLabel: "Scene Pieces Unlocked: 10/10",
+  progressCompleted: 8,
+  progressTotal: 8,
+  progressLabel: "Photosynthesis Clues: 8/8",
   emojiDiagram: "🌱 ☀️+💧+CO₂ → 🍬 + 💨 O₂",
-  caption: "The whole photosynthesis picture is visible now.",
+  caption: "The full photosynthesis flow is visible now.",
 };
 
 // ── 1. Store tests ──────────────────────────────────────────────────────────
@@ -216,9 +214,9 @@ describe("ConceptCanvas", () => {
       />,
     );
 
-    expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
-    expect(screen.getByText("Sunlight")).toBeInTheDocument();
-    expect(screen.getByText("Water")).toBeInTheDocument();
+    expect(screen.getByText("Photosynthesis Process")).toBeInTheDocument();
+    expect(screen.getAllByText("Sunlight").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Water").length).toBeGreaterThan(0);
   });
 
   it("renders caption when provided", () => {
@@ -280,14 +278,50 @@ describe("ConceptCanvas", () => {
     ).toBe("revealed");
     expect(
       container
-        .querySelector('[data-plant-element-id="roots"]')
-        ?.getAttribute("data-plant-element-state"),
-    ).toBe("revealed");
-    expect(
-      container
         .querySelector('[data-plant-element-id="oxygen"]')
         ?.getAttribute("data-plant-element-state"),
     ).toBe("hidden");
+    expect(screen.queryByText("Carbon Dioxide")).not.toBeInTheDocument();
+    expect(screen.queryByText("Glucose")).not.toBeInTheDocument();
+  });
+
+  it("hides the leaf zoom until the lesson reaches the leaf factory", () => {
+    const { container } = render(
+      <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
+        highlightKeys={MOCK_VISUAL.highlightKeys}
+        unlockedElements={MOCK_VISUAL.unlockedElements}
+        emojiDiagram={MOCK_VISUAL.emojiDiagram}
+        caption={MOCK_VISUAL.caption}
+        isRecap={false}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-leaf-zoom-state="expanded"]'),
+    ).toBeNull();
+    expect(screen.queryByText("Inside the leaf")).not.toBeInTheDocument();
+    expect(screen.queryByText("This is the food-making factory.")).not.toBeInTheDocument();
+  });
+
+  it("opens the leaf zoom once the lesson reaches the leaf factory", () => {
+    const { container } = render(
+      <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={2}
+        highlightKeys={[]}
+        unlockedElements={["sunlight", "water", "carbon_dioxide"]}
+        emojiDiagram="🌱"
+        caption={MOCK_VISUAL.caption}
+        isRecap={false}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-leaf-zoom-state="expanded"]'),
+    ).toBeInTheDocument();
+    expect(screen.getByText("This is the food-making factory.")).toBeInTheDocument();
   });
 
   it("shows checkmark on recap", () => {
@@ -376,8 +410,8 @@ describe("TeachingPanel", () => {
     );
 
     // Visual content
-    expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
-    expect(screen.getByText("Sunlight")).toBeInTheDocument();
+    expect(screen.getByText("Photosynthesis Process")).toBeInTheDocument();
+    expect(screen.getAllByText("Sunlight").length).toBeGreaterThan(0);
     // Tutor text
     expect(screen.getByText("hello")).toBeInTheDocument();
   });

@@ -7,6 +7,11 @@ modify the tutor's behavior based on conversational signals.
 
 ADAPTIVE_RULES = """ADAPTIVE BEHAVIOR:
 
+ANSWER UPTAKE:
+- If the runtime state says the student already got a concept right, briefly acknowledge it and do not ask for it again.
+- If the student gives a partial answer, say which piece they got right and ask for just one missing piece.
+- If the student's latest reply completes the current checkpoint, you may bridge to the next concept in the same response instead of re-quizzing the finished one.
+
 STUCK STUDENT (repeated failed attempts on the same concept):
 - Follow the scaffold level from the turn hint exactly.
 - Level 1: one conceptual clue + one narrow question.

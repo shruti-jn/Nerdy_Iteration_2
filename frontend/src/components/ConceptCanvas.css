@@ -85,183 +85,324 @@
 }
 
 .concept-canvas__subhead {
-  max-width: 210px;
+  max-width: 260px;
   font-size: 11px;
   line-height: 1.45;
   color: rgba(241, 245, 249, 0.74);
 }
 
 .concept-canvas__scene--illustration {
-  min-height: 322px;
+  min-height: 420px;
 }
 
-.concept-canvas__illustration {
-  position: relative;
-  min-height: 250px;
-  padding: 10px 8px 18px;
-}
-
-.concept-canvas__sky-haze {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 58%;
+.concept-canvas__scene--flow::before {
   background:
-    radial-gradient(circle at 22% 24%, rgba(250, 204, 21, 0.18), transparent 20%),
-    radial-gradient(circle at 74% 20%, rgba(255, 255, 255, 0.14), transparent 18%),
-    radial-gradient(circle at 86% 36%, rgba(255, 255, 255, 0.1), transparent 16%);
+    radial-gradient(circle at 22% 12%, rgba(250, 204, 21, 0.18), transparent 14%),
+    radial-gradient(circle at 78% 20%, rgba(125, 211, 252, 0.14), transparent 18%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.12), transparent 42%),
+    linear-gradient(0deg, rgba(11, 18, 32, 0.28), transparent 34%);
+}
+
+.concept-canvas__bio-diagram {
+  position: relative;
+  min-height: 346px;
+  padding: 8px 12px 18px;
+}
+
+.concept-canvas__diagram-arrows {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: rgba(226, 232, 240, 0.3);
   pointer-events: none;
 }
 
-.concept-canvas__ground-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 34%;
-  background:
-    radial-gradient(circle at 40% 30%, rgba(74, 222, 128, 0.12), transparent 32%),
-    linear-gradient(180deg, rgba(21, 128, 61, 0.12), rgba(20, 83, 45, 0.6));
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+.concept-canvas__diagram-arrow {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  marker-end: url(#photosynthesisArrow);
+  opacity: 0.03;
+  transition: opacity 180ms var(--ease), color 180ms var(--ease), filter 180ms var(--ease);
 }
 
-.concept-canvas__tree-shadow {
+.concept-canvas__diagram-arrow--revealed {
+  opacity: 0.86;
+  color: rgba(248, 250, 252, 0.74);
+  filter: drop-shadow(0 0 6px rgba(248, 250, 252, 0.12));
+}
+
+.concept-canvas__plant-illustration {
   position: absolute;
-  left: 49%;
-  bottom: 64px;
-  width: 190px;
-  height: 180px;
+  left: 50%;
+  top: 26px;
+  width: 248px;
+  height: 270px;
   transform: translateX(-50%);
-  opacity: 0.22;
-  filter: saturate(0.8);
+  z-index: 1;
 }
 
-.concept-canvas__tree-canopy {
+.concept-canvas__plant-illustration--factory-open {
+  left: 40%;
+  top: 52px;
+  width: 224px;
+  height: 246px;
+}
+
+.concept-canvas__plant-sun-glow {
   position: absolute;
-  display: block;
-  background: radial-gradient(circle at 50% 40%, rgba(34, 197, 94, 0.8), rgba(22, 101, 52, 0.9));
+  left: 38px;
+  top: 4px;
+  width: 170px;
+  height: 152px;
   border-radius: 50%;
-  box-shadow: inset 0 -12px 16px rgba(20, 83, 45, 0.35);
+  background: radial-gradient(circle, rgba(250, 204, 21, 0.18), transparent 72%);
+  filter: blur(3px);
 }
 
-.concept-canvas__tree-canopy--left {
-  width: 92px;
-  height: 82px;
-  left: 18px;
-  top: 22px;
+.concept-canvas__plant-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 18px 28px rgba(15, 23, 42, 0.22));
 }
 
-.concept-canvas__tree-canopy--middle {
+.concept-canvas__plant-halo {
+  fill: rgba(74, 222, 128, 0.07);
+}
+
+.concept-canvas__plant-stem-path {
+  fill: none;
+  stroke: url(#plantStem);
+  stroke-width: 12px;
+  stroke-linecap: round;
+}
+
+.concept-canvas__plant-leaf-path {
+  fill: url(#leafFill);
+  stroke: rgba(15, 118, 110, 0.38);
+  stroke-width: 1.6px;
+}
+
+.concept-canvas__plant-vein-path {
+  fill: none;
+  stroke: rgba(217, 249, 157, 0.56);
+  stroke-width: 1.4px;
+  stroke-linecap: round;
+}
+
+.concept-canvas__plant-root-path {
+  fill: none;
+  stroke: url(#rootStroke);
+  stroke-width: 2.3px;
+  stroke-linecap: round;
+}
+
+.concept-canvas__plant-highlight-ring {
+  fill: none;
+  stroke: rgba(248, 250, 252, 0.26);
+  stroke-width: 2px;
+  opacity: 0.28;
+  transition: opacity 180ms var(--ease), stroke 180ms var(--ease), transform 180ms var(--ease);
+}
+
+.concept-canvas__plant-highlight-ring--active {
+  stroke: rgba(250, 204, 21, 0.88);
+  opacity: 0.94;
+}
+
+.concept-canvas__plant-highlight-dot {
+  fill: rgba(250, 204, 21, 0.94);
+  opacity: 0.16;
+  transition: opacity 180ms var(--ease), filter 180ms var(--ease);
+}
+
+.concept-canvas__plant-highlight-dot--active {
+  opacity: 0.9;
+  filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.44));
+}
+
+.concept-canvas__plant-stage-label {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(15, 17, 23, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.82);
+}
+
+.concept-canvas__diagram-node {
+  position: absolute;
+  z-index: 2;
+}
+
+.concept-canvas__diagram-node--sunlight {
+  left: 16px;
+  top: 18px;
   width: 118px;
-  height: 100px;
-  left: 42px;
-  top: 0;
 }
 
-.concept-canvas__tree-canopy--right {
-  width: 88px;
-  height: 78px;
-  right: 8px;
-  top: 28px;
+.concept-canvas__diagram-node--carbon-dioxide {
+  left: 10px;
+  top: 126px;
+  width: 128px;
 }
 
-.concept-canvas__tree-trunk {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 28px;
-  height: 118px;
-  transform: translateX(-50%);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(120, 53, 15, 0.78), rgba(68, 64, 60, 0.95));
+.concept-canvas__diagram-node--water {
+  left: 12px;
+  bottom: 54px;
+  width: 100px;
 }
 
-.concept-canvas__sapling {
-  position: absolute;
-  left: 22%;
-  bottom: 70px;
-  width: 92px;
-  height: 110px;
-}
-
-.concept-canvas__sapling-stem {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 8px;
-  height: 72px;
-  transform: translateX(-50%);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(132, 204, 22, 0.9), rgba(21, 128, 61, 0.95));
-}
-
-.concept-canvas__sapling-leaf {
-  position: absolute;
-  bottom: 46px;
-  width: 34px;
-  height: 20px;
-  background: linear-gradient(180deg, rgba(74, 222, 128, 0.95), rgba(22, 163, 74, 0.95));
-  border-radius: 90% 10% 80% 20%;
-  box-shadow: inset 0 -6px 10px rgba(21, 128, 61, 0.28);
-}
-
-.concept-canvas__sapling-leaf--left {
-  left: 14px;
-  transform: rotate(-28deg);
-}
-
-.concept-canvas__sapling-leaf--right {
+.concept-canvas__diagram-node--oxygen {
   right: 14px;
-  transform: scaleX(-1) rotate(-28deg);
+  top: 24px;
+  width: 104px;
 }
 
-.concept-canvas__root-bed {
-  position: absolute;
-  left: 17%;
-  bottom: 20px;
-  width: 160px;
-  height: 48px;
-  opacity: 0.38;
+.concept-canvas__diagram-node--sugar {
+  right: 12px;
+  top: 248px;
+  width: 110px;
 }
 
-.concept-canvas__root-line {
+.concept-canvas__leaf-zoom {
   position: absolute;
-  display: block;
-  height: 2px;
-  background: rgba(191, 219, 254, 0.5);
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 13px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(20, 83, 45, 0.2), rgba(15, 17, 23, 0.42)),
+    rgba(15, 17, 23, 0.32);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 30px rgba(15, 23, 42, 0.18);
+}
+
+.concept-canvas__leaf-zoom--collapsed {
+  bottom: 10px;
+  width: min(240px, calc(100% - 160px));
+  gap: 8px;
+  padding: 11px 12px 12px;
+  background:
+    linear-gradient(180deg, rgba(20, 83, 45, 0.14), rgba(15, 17, 23, 0.3)),
+    rgba(15, 17, 23, 0.22);
+}
+
+.concept-canvas__leaf-zoom--expanded {
+  top: 76px;
+  right: 14px;
+  left: auto;
+  bottom: auto;
+  width: min(248px, calc(100% - 170px));
+  transform: none;
+  z-index: 3;
+}
+
+.concept-canvas__leaf-zoom-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.concept-canvas__leaf-zoom-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.concept-canvas__leaf-zoom-copy {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.68);
+}
+
+.concept-canvas__leaf-zoom-preview {
+  display: flex;
+  gap: 8px;
+}
+
+.concept-canvas__leaf-zoom-preview-pill {
+  flex: 1;
+  min-width: 0;
+  height: 8px;
   border-radius: 999px;
-  transform-origin: left center;
+  background: rgba(248, 250, 252, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.concept-canvas__root-line--one {
-  width: 76px;
-  left: 34px;
-  top: 10px;
-  transform: rotate(18deg);
+.concept-canvas__leaf-zoom-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.concept-canvas__root-line--two {
-  width: 92px;
-  left: 22px;
-  top: 22px;
-  transform: rotate(-6deg);
+.concept-canvas__leaf-zoom-cell {
+  min-width: 0;
 }
 
-.concept-canvas__root-line--three {
-  width: 84px;
-  left: 26px;
-  top: 34px;
-  transform: rotate(-22deg);
+.concept-canvas__equation-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.concept-canvas__equation-token,
+.concept-canvas__equation-arrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.concept-canvas__equation-token {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(15, 17, 23, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(148, 163, 184, 0.54);
+  transition: color 180ms var(--ease), border-color 180ms var(--ease), background-color 180ms var(--ease);
+}
+
+.concept-canvas__equation-token--revealed {
+  color: rgba(248, 250, 252, 0.88);
+  border-color: rgba(250, 204, 21, 0.18);
+  background: rgba(250, 204, 21, 0.08);
+}
+
+.concept-canvas__equation-arrow {
+  color: rgba(248, 250, 252, 0.5);
 }
 
 .concept-canvas__plant-element {
-  position: absolute;
-  transform: translate(-50%, -50%);
+  position: relative;
+  transform: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
-  min-width: 58px;
-  padding: 7px 8px 6px;
+  min-width: 0;
+  padding: 9px 10px 8px;
   border-radius: 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(15, 17, 23, 0.26);
@@ -276,14 +417,16 @@
 }
 
 .concept-canvas__plant-element--hidden {
-  opacity: 0.08;
-  filter: blur(6px) saturate(0.1);
-  transform: translate(-50%, -50%) scale(0.82);
+  opacity: 0.12;
+  filter: saturate(0);
+  transform: scale(0.95);
+  background: rgba(15, 17, 23, 0.14);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .concept-canvas__plant-element--revealed {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1);
+  transform: scale(1);
   box-shadow: 0 12px 22px rgba(15, 23, 42, 0.24);
 }
 
@@ -317,14 +460,41 @@
   line-height: 1;
 }
 
+.concept-canvas__plant-icon--hidden {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.42);
+}
+
 .concept-canvas__plant-label {
   min-height: 12px;
-  font-size: 10px;
-  line-height: 1.1;
+  font-size: 11px;
+  line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: rgba(248, 250, 252, 0.92);
+  text-align: left;
+}
+
+.concept-canvas__plant-note {
+  min-height: 14px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.64);
+}
+
+.concept-canvas__plant-element--diagram {
+  min-height: 74px;
+}
+
+.concept-canvas__plant-element--factory {
+  align-items: center;
+  min-height: 86px;
+  padding: 8px 8px 7px;
+}
+
+.concept-canvas__plant-element--factory .concept-canvas__plant-label,
+.concept-canvas__plant-element--factory .concept-canvas__plant-note {
   text-align: center;
 }
 
@@ -442,52 +612,93 @@
   }
 
   .concept-canvas__scene--illustration {
-    min-height: 292px;
+    min-height: 496px;
   }
 
-  .concept-canvas__illustration {
-    min-height: 222px;
+  .concept-canvas__bio-diagram {
+    min-height: 432px;
+    padding: 8px 10px 14px;
   }
 
-  .concept-canvas__tree-shadow {
-    width: 156px;
-    height: 150px;
-    bottom: 58px;
+  .concept-canvas__plant-illustration {
+    top: 74px;
+    width: 204px;
+    height: 228px;
   }
 
-  .concept-canvas__sapling {
-    left: 20%;
-    width: 82px;
-    height: 98px;
+  .concept-canvas__plant-illustration--factory-open {
+    left: 42%;
+    top: 142px;
+    width: 176px;
+    height: 204px;
   }
 
-  .concept-canvas__root-bed {
-    width: 136px;
+  .concept-canvas__diagram-node--sunlight {
+    left: 8px;
+    top: 14px;
+    width: 100px;
+  }
+
+  .concept-canvas__diagram-node--carbon-dioxide {
+    left: 6px;
+    top: 136px;
+    width: 112px;
+  }
+
+  .concept-canvas__diagram-node--water {
+    left: 8px;
+    bottom: 70px;
+    width: 88px;
+  }
+
+  .concept-canvas__diagram-node--oxygen {
+    right: 8px;
+    top: 26px;
+    width: 90px;
+  }
+
+  .concept-canvas__diagram-node--sugar {
+    right: 6px;
+    top: 278px;
+    width: 96px;
+  }
+
+  .concept-canvas__leaf-zoom {
+    bottom: 10px;
+  }
+
+  .concept-canvas__leaf-zoom--collapsed {
+    width: min(220px, calc(100% - 84px));
+  }
+
+  .concept-canvas__leaf-zoom--expanded {
+    top: 82px;
+    right: 8px;
+    width: min(214px, calc(100% - 134px));
   }
 
   .concept-canvas__plant-element {
-    min-width: 52px;
-    padding: 6px 7px 5px;
+    padding: 8px 9px 7px;
   }
 
   .concept-canvas__plant-icon {
-    font-size: 19px;
+    font-size: 20px;
   }
 
   .concept-canvas__plant-label {
+    font-size: 10px;
+  }
+
+  .concept-canvas__plant-note {
     font-size: 9px;
   }
 
-  .concept-canvas__scene-grid {
-    min-height: 194px;
+  .concept-canvas__plant-element--factory {
+    min-height: 78px;
+    padding: 7px 6px;
   }
 
-  .concept-canvas__layer {
-    min-width: 76px;
-    padding: 9px 8px 8px;
-  }
-
-  .concept-canvas__layer-label {
-    max-width: 76px;
+  .concept-canvas__leaf-zoom-copy {
+    font-size: 10px;
   }
 }

@@ -9,6 +9,10 @@ PHOTOSYNTHESIS_SCAFFOLD = """TOPIC: Photosynthesis
 
 CURRICULUM FLOW (guide the student through these steps in order):
 
+ANSWER UPTAKE FOR THIS TOPIC:
+- If the student names one correct ingredient or product, explicitly repeat that correct piece and ask only for the missing one.
+- If the student fully answers the current step, bridge to the next concept in the same response instead of quizzing the finished fact again.
+
 STEP 0 — THE HOOK:
 Start with a mystery: "A tiny seed weighs almost nothing. But a giant oak tree weighs TONS. Where did all that extra stuff come from?"
 Goal: spark curiosity before teaching anything.

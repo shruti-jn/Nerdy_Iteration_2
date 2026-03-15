@@ -1304,3 +1304,53 @@ Decisions:
 - Kept historical Feature Status rows in RUNBOOK and appended a new Phase 6 row. Alternative considered: pruning older milestone rows. Appending preserved chronology while still clearly marking current documentation state.
 
 Refs: `README.md:1-119`, `RUNBOOK.md:17-23`, `RUNBOOK.md:135`, `RUNBOOK.md:153-165`, `RUNBOOK.md:173-209`, `RUNBOOK.md:326`, `backend/main.py:276-336`, `frontend/src/useTutorSocket.ts:59-73`
+
+---
+
+## 2026-03-15 18:02
+
+What: Rebuilt the photosynthesis concept map into a true process diagram with a central plant, directional arrows for inputs/outputs, a zoomed "inside the leaf" factory area, and an equation ribbon that ties sunlight, water, and carbon dioxide to glucose and oxygen.
+
+Why: The previous map still felt like floating labels inside a narrow sidebar card, which made the science hard to follow and did not match the clearer educational-diagram style needed for the lesson.
+
+How: Reworked `frontend/src/components/ConceptCanvas.tsx` to render a plant-centered SVG scene and grouped process nodes, rewrote `frontend/src/components/ConceptCanvas.css` to support the new poster-like layout and responsive behavior, updated `frontend/src/visual-teaching.test.tsx` for the new wording/progress model, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` and `npm run typecheck`.
+
+---
+
+## 2026-03-15 17:35
+
+What: Fixed the photosynthesis concept-map regressions that were making hidden clues visible, expanding the leaf detail card too early, and cluttering the `0/8` state with overly bright arrows/glows.
+
+Why: The new diagram structure was directionally better, but the initial rendering was still leaking answers and blocking the plant with an oversized overlay, which made the lesson feel broken instead of progressive.
+
+How: Patched `frontend/src/components/ConceptCanvas.tsx` so hidden clues use non-spoiler placeholders and the leaf zoom stays collapsed until leaf-factory concepts unlock, adjusted `frontend/src/components/ConceptCanvas.css` to tone down hidden states and inactive connectors, added regression coverage in `frontend/src/visual-teaching.test.tsx`, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`62 passed`) plus `npm run typecheck`.
+
+---
+
+## 2026-03-15 17:37
+
+What: Hid the photosynthesis leaf-factory panel entirely before the factory phase and made it appear automatically once the lesson reaches the factory step.
+
+Why: Even the collapsed placeholder was still visually competing with the plant at the start of the lesson, and you wanted the factory view to open only when the lesson actually gets there.
+
+How: Updated `frontend/src/components/ConceptCanvas.tsx` to gate the leaf zoom on the photosynthesis factory step (`stepId >= 2`) while still allowing recap/unlock fallbacks, adjusted the visual regression tests in `frontend/src/visual-teaching.test.tsx`, and re-ran `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`62 passed`) plus `npm run typecheck`.
+
+---
+
+## 2026-03-15 17:43
+
+What: Fixed the photosynthesis tutoring state so correct concepts accumulate across turns, partial progress stops unnecessary scaffold escalation, and the runtime hint distinguishes previously accepted ideas from ideas newly supplied in the latest reply.
+
+Why: The tutor was still re-asking ingredients the student had already supplied on earlier turns because lesson progression and prompt-state generation were judging mastery from a single transcript turn instead of the student's accumulated progress.
+
+How: Patched `backend/pipeline/lesson_progress.py` to use revealed concept memory when evaluating mastery, missing concepts, bridge opportunities, and failure escalation; updated `backend/pipeline/orchestrator_custom.py` and `backend/prompts/socratic_system.py` to clarify `ACCEPTED SO FAR` versus `ACCEPTED THIS TURN`; added regression coverage in `backend/tests/test_lesson_progress.py` and `backend/tests/test_orchestrator_custom.py`; and verified with `backend/venv/bin/python -m pytest backend/tests/test_lesson_progress.py backend/tests/test_orchestrator_custom.py -q` (`17 passed`) plus `backend/venv/bin/python -m pytest backend/tests/test_server.py -q` (`25 passed, 1 skipped`).
+
+---
+
+## 2026-03-15 18:13
+
+What: Repositioned the photosynthesis concept-canvas nodes so `Water` no longer crowds `CO₂`, and moved the leaf-insides panel into the upper-right when the factory view opens.
+
+Why: The left-side input cards were visually colliding in the narrow concept-map rail, and the leaf factory needed to open in a clearer upper-right docking position instead of competing with the center of the plant.
+
+How: Updated `frontend/src/components/ConceptCanvas.tsx` arrow paths and factory-open class hooks, adjusted `frontend/src/components/ConceptCanvas.css` node coordinates plus the expanded leaf-zoom docking/plant shift for desktop and mobile, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`62 passed`) and `npm run typecheck`.

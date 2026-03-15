@@ -70,13 +70,25 @@ def test_build_turn_hint_uses_scaffold_level_and_blocks_teach_back_until_ready()
         current_step_id=1,
         visual_step_id=1,
         failed_attempts_on_current_step=3,
+        revealed_elements=["carbon_dioxide", "sunlight"],
     )
 
-    hint = _build_turn_hint(turn_number=13, max_turns=15, progress=progress, total_steps=7)
+    hint = _build_turn_hint(
+        turn_number=13,
+        max_turns=15,
+        progress=progress,
+        total_steps=7,
+        transcript="Water.",
+    )
 
     assert "SCAFFOLD LEVEL 3" in hint
     assert "A, B, and C" in hint
     assert "do not force a recap or teach-back" in hint
+    assert "ACCEPTED SO FAR=carbon dioxide, sunlight" in hint
+    assert "ACCEPTED THIS TURN=water" in hint
+    assert "MISSING NOW=none yet" in hint
+    assert "DO NOT RE-ASK=carbon dioxide, sunlight, water" in hint
+    assert "Treat ACCEPTED SO FAR as ideas the student had already earned before this reply." in hint
     assert "[TEACH-BACK PHASE]" not in hint
 
 
