@@ -132,6 +132,7 @@ Artifacts: `backend/evals/results/`, `backend/benchmarks/results/`. Exit code 1 
 | [tests/test_stt_adapter.py](backend/tests/test_stt_adapter.py) | Deepgram STT |
 | [tests/test_tts_adapter.py](backend/tests/test_tts_adapter.py) | TTS adapter (Deepgram / ElevenLabs) |
 | [tests/test_eval_artifacts.py](backend/tests/test_eval_artifacts.py) | Eval/benchmark artifact schema, percentile, pass/fail logic |
+| [tests/test_visuals.py](backend/tests/test_visuals.py) | Visual registry: step-tag parsing, step/recap lookup, clamping, message serialisation |
 
 ### Frontend
 ```bash
@@ -265,3 +266,11 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Fly.io deployment infra | ✅ Done | Multi-stage Dockerfile, fly.toml, .dockerignore, static file serving from FastAPI |
 | Production deployment (Fly.io) | ✅ Done | Live at https://nerdy-tutor.fly.dev; auto-stop/start; health check at /health |
 | CI/CD pipeline (GitHub Actions) | ✅ Done | Push to main → pytest + npm test → deploy to Fly.io; concurrency-controlled |
+| Visual teaching: contracts (Phase 0) | ✅ Done | LLM step-tag prompt, WS message schema, frontend types, backend visual registry with emoji diagrams |
+| Visual teaching: store + socket (Phase 1.1) | ✅ Done | Frontend store visual state + useTutorSocket parsing for lesson_visual_update |
+| Visual teaching: orchestrator emit (Phase 1.2) | ✅ Done | Backend step-tag parsing + lesson_visual_update emission in handle_turn, handle_greeting, session_complete |
+| Visual teaching: TeachingPanel UI (Phase 1.3) | ✅ Done | TeachingPanel + ConceptCanvas + StepProgress components with emoji diagrams |
+| Visual teaching: App integration (Phase 1.4) | ✅ Done | TeachingPanel wired into right rail; mobile-responsive; backward compatible |
+| Visual teaching: session_restore visual (Phase 1.5) | ✅ Done | Send lesson_visual_update after session_restore with clamped step approximation |
+| Visual teaching: tests (Phase 1.6) | ✅ Done | 23 tests: store visual state (5), StepProgress (6), ConceptCanvas (5), TeachingPanel (7) + socket tests |
+| Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |

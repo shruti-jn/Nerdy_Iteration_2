@@ -2,9 +2,9 @@
 Langfuse LLM observability integration.
 
 Provides a singleton Langfuse client for tracing LLM calls (generations),
-turn-level spans, and session metadata. Gracefully degrades when Langfuse
-credentials are not configured — all callers should check ``get_langfuse()``
-for None before creating observations.
+turn-level spans, session metadata, and per-turn Socratic quality scores.
+Gracefully degrades when Langfuse credentials are not configured — all
+callers should check ``get_langfuse()`` for None before creating observations.
 
 Pipeline stage: Infrastructure (observability)
 """
@@ -19,22 +19,16 @@ from langfuse import Langfuse
 logger = logging.getLogger("tutor")
 
 _client: Optional[Langfuse] = None
+_current_trace_id: Optional[str] = None
 
 
 def init_langfuse(settings) -> None:
-    """Initialize the Langfuse client from application settings.
-
-    No-op if ``LANGFUSE_PUBLIC_KEY`` or ``LANGFUSE_SECRET_KEY`` are empty.
-    Safe to call multiple times — subsequent calls are ignored.
-    """
     global _client
     if _client is not None:
         return
-
     if not settings.langfuse_public_key or not settings.langfuse_secret_key:
         logger.info("Langfuse credentials not configured — LLM tracing disabled")
         return
-
     _client = Langfuse(
         public_key=settings.langfuse_public_key,
         secret_key=settings.langfuse_secret_key,
@@ -44,21 +38,16 @@ def init_langfuse(settings) -> None:
 
 
 def get_langfuse() -> Optional[Langfuse]:
-    """Return the singleton Langfuse client, or None if not configured."""
     return _client
 
 
 def shutdown_langfuse() -> None:
-    """Flush pending events and shut down the Langfuse client."""
     global _client
     if _client is not None:
         _client.flush()
         _client.shutdown()
         _client = None
         logger.info("Langfuse shut down")
-
-
-# ── Helpers for non-context-manager tracing ──────────────────────────────
 
 
 def _noop(**kwargs: Any) -> None:
@@ -69,29 +58,33 @@ def trace_span(
     name: str,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Callable[..., None]:
-    """Start a Langfuse span observation. Returns a ``finish`` callable.
-
-    Call ``finish()`` when the span is complete. If Langfuse is not
-    configured, returns a no-op callable so callers don't need to
-    check for None.
-
-    Example::
-
-        finish = trace_span("turn-3", metadata={"session_id": "abc"})
-        # ... do work ...
-        finish()
-    """
+    """Start a Langfuse span. Returns a finish callable.
+    Call finish(metadata={...}) to attach final metadata before closing."""
+    global _current_trace_id
     lf = _client
     if lf is None:
         return _noop
 
     cm = lf.start_as_current_observation(name=name, metadata=metadata)
     cm.__enter__()
+    trace_id = getattr(cm, "trace_id", None)
+    _current_trace_id = trace_id
 
     def finish(**kwargs: Any) -> None:
+        global _current_trace_id
+        if kwargs.get("metadata"):
+            try:
+                lf.update_current_observation(metadata=kwargs["metadata"])
+            except Exception:
+                pass
         cm.__exit__(None, None, None)
+        _current_trace_id = None
 
     return finish
+
+
+def get_current_trace_id() -> Optional[str]:
+    return _current_trace_id
 
 
 def trace_generation(
@@ -102,28 +95,13 @@ def trace_generation(
     model_parameters: Optional[Dict[str, Any]] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Callable[..., None]:
-    """Start a Langfuse generation observation. Returns a ``finish`` callable.
-
-    Call ``finish(output=..., usage_details=...)`` when the generation
-    is complete. Passes kwargs through to ``update_current_generation()``.
-
-    Example::
-
-        finish = trace_generation("llm_stream", model="llama-3.3-70b")
-        # ... stream tokens ...
-        finish(output="Hello! What do you know about photosynthesis?")
-    """
+    """Start a Langfuse generation observation. Returns a finish callable."""
     lf = _client
     if lf is None:
         return _noop
-
     cm = lf.start_as_current_observation(
-        name=name,
-        as_type="generation",
-        model=model,
-        input=input,
-        model_parameters=model_parameters,
-        metadata=metadata,
+        name=name, as_type="generation", model=model,
+        input=input, model_parameters=model_parameters, metadata=metadata,
     )
     cm.__enter__()
 
@@ -133,3 +111,17 @@ def trace_generation(
         cm.__exit__(None, None, None)
 
     return finish
+
+
+def score_turn(scores: Dict[str, float | int]) -> None:
+    """Attach Socratic quality scores to the current Langfuse trace.
+    No-op if Langfuse is not configured or no trace is active."""
+    lf = _client
+    trace_id = _current_trace_id
+    if lf is None or trace_id is None:
+        return
+    for name, value in scores.items():
+        try:
+            lf.score(trace_id=trace_id, name=name, value=float(value))
+        except Exception as exc:
+            logger.warning("langfuse_score_failed name=%s error=%s", name, exc)

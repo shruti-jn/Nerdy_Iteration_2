@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { AppView, SessionMode, TopicId, ConversationEntry, SessionStore, StageLatency, TurnLatency } from "./types";
+import type { AppView, SessionMode, TopicId, ConversationEntry, SessionStore, StageLatency, TurnLatency, LessonVisualState } from "./types";
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -21,6 +21,7 @@ export function useSessionStore(): SessionStore {
   const [totalTurns, setTotalTurns] = useState(15);
   const [sessionComplete, setSessionCompleteState] = useState(false);
   const [error, setErrorState] = useState<string | null>(null);
+  const [visual, setVisualState] = useState<LessonVisualState | null>(null);
 
   const setView = useCallback((v: AppView) => {
     setViewState(v);
@@ -39,6 +40,7 @@ export function useSessionStore(): SessionStore {
     setLatencyHistory((prev) => [...prev.slice(-4), entry]); // keep last 5
   }, []);
   const setError = useCallback((msg: string | null) => setErrorState(msg), []);
+  const setVisual = useCallback((v: LessonVisualState | null) => setVisualState(v), []);
 
   const setTurnInfo = useCallback((tn: number, tt: number) => {
     setTurnNumber(tn);
@@ -138,6 +140,7 @@ export function useSessionStore(): SessionStore {
       setModeState("idle");
       setSessionCompleteState(false);
       setErrorState(null);
+      setVisualState(null);
     },
     [],
   );
@@ -153,6 +156,7 @@ export function useSessionStore(): SessionStore {
     setStageLatencyState(null);
     setLatencyHistory([]);
     setErrorState(null);
+    setVisualState(null);
   }, []);
 
   return {
@@ -170,6 +174,8 @@ export function useSessionStore(): SessionStore {
     history,
     streamingWords,
     error,
+    visual,
+    setVisual,
     setView,
     setTopic,
     setMode,

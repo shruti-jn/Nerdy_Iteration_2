@@ -56,8 +56,17 @@ class Settings(BaseSettings):
     total_target_ms: int = Field(default=500, description="End-to-end target latency in ms")
     total_max_ms: int = Field(default=1000, description="End-to-end max acceptable in ms")
 
+    # --- Avatar Provider ---
+    avatar_provider: str = Field(default="simli", description="Avatar provider: 'simli' or 'spatialreal'")
+
     # --- Simli ---
     simli_face_id: str = Field(default="", description="Simli face ID for avatar")
+
+    # --- SpatialReal ---
+    spatialreal_api_key: str = Field(default="", description="SpatialReal API key")
+    spatialreal_app_id: str = Field(default="", description="SpatialReal App ID")
+    spatialreal_avatar_id: str = Field(default="", description="SpatialReal Avatar ID")
+    spatialreal_region: str = Field(default="us-west", description="SpatialReal region: 'us-west' or 'ap-northeast'")
 
     # --- Server ---
     host: str = Field(default="0.0.0.0", description="Server bind host")

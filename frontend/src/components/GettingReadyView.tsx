@@ -20,16 +20,13 @@ export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, on
 
   console.debug("[GettingReady] render — ws:", wsConnected, "avatar:", avatarState, "allReady:", allReady);
 
-  // Show fallback immediately on avatar error, or after 10s if still connecting
+  // Show fallback immediately on avatar error, or after 10s if still not live
   const [showFallback, setShowFallback] = useState(false);
+
+  // Timer-based fallback: starts once and only resets if avatar goes live
   useEffect(() => {
     if (avatarReady) {
       console.debug("[GettingReady] Avatar is live — no fallback needed");
-      return;
-    }
-    if (avatarState === "error") {
-      console.debug("[GettingReady] Avatar errored — showing fallback immediately");
-      setShowFallback(true);
       return;
     }
     console.debug("[GettingReady] Starting 10s avatar fallback timer");
@@ -38,7 +35,15 @@ export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, on
       setShowFallback(true);
     }, 10_000);
     return () => clearTimeout(timer);
-  }, [avatarReady, avatarState]);
+  }, [avatarReady]);
+
+  // Immediate fallback on avatar error (separate effect to avoid resetting the timer)
+  useEffect(() => {
+    if (avatarState === "error") {
+      console.debug("[GettingReady] Avatar errored — showing fallback immediately");
+      setShowFallback(true);
+    }
+  }, [avatarState]);
 
   const canStart = allReady || (wsConnected && showFallback);
 

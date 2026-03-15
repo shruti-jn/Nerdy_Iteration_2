@@ -37,6 +37,11 @@ class TestConfig:
     elevenlabs_api_key: str = "test-elevenlabs-key-00000"
     elevenlabs_voice_id: str = "test-voice-id-00000"
     simli_api_key: str = "test-simli-key-00000"
+    avatar_provider: str = "simli"
+    spatialreal_api_key: str = "test-spatialreal-key-00000"
+    spatialreal_app_id: str = "test-app-id-00000"
+    spatialreal_avatar_id: str = "test-avatar-id-00000"
+    spatialreal_region: str = "us-west"
     logfire_token: str = "test-logfire-token-00000"
     braintrust_api_key: str = "test-braintrust-key-00000"
     stt_target_ms: int = 150

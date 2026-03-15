@@ -26,6 +26,7 @@ from pipeline.sentence_buffer import SentenceBuffer
 from pipeline.session_manager import SessionManager
 from pipeline.vad_handler import VADHandler
 from prompts import build_greeting_prompt
+from prompts.visuals import parse_step_tag, get_visual_for_step, get_recap_visual, visual_to_message
 
 logger = logging.getLogger("tutor")
 
@@ -48,11 +49,13 @@ class CustomOrchestrator:
         session_id: str,
         send_json: Callable[[dict], Awaitable[None]],
         max_turns: int | None = None,
+        braintrust_logger=None,
     ) -> None:
         self._settings = settings
         self._session_id = session_id
         self._send_json = send_json
         self._max_turns = max_turns if max_turns is not None else _default_max_turns()
+        self._avatar_provider: str = getattr(settings, "avatar_provider", "simli")
         self._stt = DeepgramSTTAdapter(settings)
         self._llm = GroqLLMEngine(settings)
         self._tts = (
@@ -64,6 +67,7 @@ class CustomOrchestrator:
         self._vad = VADHandler()
         self._last_metrics: dict = {}
         self._topic: str = ""
+        self._last_step_id: int = 0
 
         # Register cancel callbacks for interrupt (barge-in)
         self._vad.register_cancel_callback("llm", self._llm.cancel)
@@ -183,8 +187,16 @@ class CustomOrchestrator:
                 label=f"turn-{turn_number}",
             )
 
-            if full_text:
-                session.append_turn(transcript, full_text)
+            # Parse step tag from LLM output and strip before sending to frontend
+            step_id, clean_text = parse_step_tag(full_text) if full_text else (None, full_text)
+            if step_id is None:
+                step_id_to_use = self._last_step_id
+            else:
+                step_id_to_use = step_id
+                self._last_step_id = step_id
+
+            if clean_text:
+                session.append_turn(transcript, clean_text)
                 await session.maybe_compress_history()
 
             self._vad.finish_speaking()
@@ -195,14 +207,20 @@ class CustomOrchestrator:
             timing["total_turns"] = self._max_turns
             self._last_metrics = timing
 
-            await self._send_json({"type": "tutor_text_chunk", "text": full_text, "timing": timing})
+            await self._send_json({"type": "tutor_text_chunk", "text": clean_text, "timing": timing})
+
+            # Send visual update for the current curriculum step
+            visual = get_visual_for_step(self._topic, step_id_to_use)
+            if visual:
+                await self._send_json(visual_to_message(visual, self._topic, session.turn_count))
 
             logger.info(
-                "turn_complete session_id=%s turn=%d/%d text=%s timing=%s",
+                "turn_complete session_id=%s turn=%d/%d step=%d text=%s timing=%s",
                 self._session_id,
                 session.turn_count,
                 self._max_turns,
-                full_text[:80],
+                step_id_to_use,
+                (clean_text or "")[:80],
                 timing,
             )
 
@@ -213,6 +231,10 @@ class CustomOrchestrator:
                     "total_turns": self._max_turns,
                     "message": "Great job! You've completed all your questions for this session.",
                 })
+                # Send recap visual on session completion
+                recap = get_recap_visual(self._topic)
+                if recap:
+                    await self._send_json(visual_to_message(recap, self._topic, session.turn_count, is_recap=True))
 
         except TutorError as exc:
             mc.end_turn()
@@ -294,7 +316,9 @@ class CustomOrchestrator:
                     sent_first_byte_ns = time.monotonic_ns()
                 b64 = base64.b64encode(audio_chunk).decode("ascii")
                 await self._send_json({"type": "audio_chunk", "data": b64})
-                if self._simli is not None:
+                # Forward audio to Simli for lip-sync (only when using Simli provider).
+                # In SpatialReal SDK Mode the frontend forwards audio directly.
+                if self._simli is not None and self._avatar_provider == "simli":
                     try:
                         if not avatar_started:
                             mc.start("avatar")
@@ -325,7 +349,7 @@ class CustomOrchestrator:
                 sentence[:60],
             )
 
-        if self._simli is not None and avatar_started:
+        if self._simli is not None and self._avatar_provider == "simli" and avatar_started:
             mc.end("avatar")
 
         result = full_text.strip()
@@ -395,8 +419,11 @@ class CustomOrchestrator:
                 label="greeting",
                 use_vad=False,
             )
-            if full_text:
-                session.history.append({"role": "assistant", "content": full_text})
+            # Parse step tag from greeting (LLM might include [STEP:0])
+            _, clean_text = parse_step_tag(full_text) if full_text else (None, full_text)
+
+            if clean_text:
+                session.history.append({"role": "assistant", "content": clean_text})
 
             mc.end_turn()
             timing = mc.to_dict()
@@ -404,15 +431,22 @@ class CustomOrchestrator:
             timing["total_turns"] = self._max_turns
             await self._send_json({
                 "type": "tutor_text_chunk",
-                "text": full_text,
+                "text": clean_text,
                 "timing": timing,
                 "is_greeting": True,
             })
+
+            # Send visual for step 0 (hook) — hardcoded, don't rely on LLM tag
+            visual = get_visual_for_step(topic, 0)
+            if visual:
+                await self._send_json(visual_to_message(visual, topic, 0))
+            self._last_step_id = 0
+
             await self._send_json({"type": "greeting_complete"})
             logger.info(
                 "greeting_complete session_id=%s text=%s timing=%s",
                 self._session_id,
-                full_text[:80],
+                (clean_text or "")[:80],
                 timing,
             )
         except Exception as exc:

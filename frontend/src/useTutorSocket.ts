@@ -55,7 +55,8 @@ type ServerMessage =
   | { type: "student_partial"; text: string }
   | { type: "session_complete"; turn_number: number; total_turns: number; message: string }
   | { type: "greeting_complete" }
-  | { type: "error"; code: string; message?: string; timing?: Record<string, number | null> };
+  | { type: "error"; code: string; message?: string; timing?: Record<string, number | null> }
+  | { type: "lesson_visual_update"; diagram_id: string; step_id: number; step_label: string; total_steps: number; highlight_keys?: string[]; caption?: string; emoji_diagram: string; turn_number: number; is_recap: boolean };
 
 /** localStorage key for persisting the session ID across page refreshes. */
 const SESSION_ID_KEY = "tutorSessionId";
@@ -84,12 +85,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  // Build WS URL with topic and session_id query parameters
+  // Build WS URL with topic, session_id, and avatar query parameters
   const buildServerUrl = useCallback(() => {
     const params = new URLSearchParams();
     if (opts.topicId) params.set("topic", opts.topicId);
     const savedSessionId = localStorage.getItem(SESSION_ID_KEY);
     if (savedSessionId) params.set("session_id", savedSessionId);
+    // Forward ?avatar= URL param so the backend can switch avatar providers
+    const urlAvatar = new URLSearchParams(window.location.search).get("avatar");
+    if (urlAvatar) params.set("avatar", urlAvatar);
     const qs = params.toString() ? `?${params.toString()}` : "";
     return opts.serverUrl ??
       `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/session${qs}`;
@@ -344,6 +348,18 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         } else {
           store.setMode("idle");
         }
+      } else if (msg.type === "lesson_visual_update") {
+        store.setVisual({
+          diagramId: msg.diagram_id,
+          stepId: msg.step_id,
+          stepLabel: msg.step_label,
+          totalSteps: msg.total_steps,
+          highlightKeys: msg.highlight_keys ?? [],
+          caption: msg.caption ?? null,
+          emojiDiagram: msg.emoji_diagram,
+          turnNumber: msg.turn_number,
+          isRecap: msg.is_recap,
+        });
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -353,12 +369,18 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const connect = useCallback(() => {
     manualDisconnectRef.current = false;
     if (optsRef.current._useMock) {
-      // Mock mode: immediately mark as connected and fire a fake session_start,
-      // then simulate a tutor response whenever sendEndOfUtterance is called.
       clearReconnectTimer();
       reconnectAttemptRef.current = 0;
       connectedRef.current = true;
-      setTimeout(() => optsRef.current.onSessionStart?.(), 100);
+      // Trigger a store update so React re-renders and reads isConnected=true
+      setTimeout(() => {
+        optsRef.current.store.setMode("idle");
+        optsRef.current.onSessionStart?.();
+        // No real avatar in mock mode — signal error so fallback appears immediately
+        setTimeout(() => {
+          optsRef.current.onSimliError?.("Mock mode — no avatar available");
+        }, 200);
+      }, 100);
       return;
     }
 
@@ -468,9 +490,38 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
             if (i === words.length - 1) {
               store.setLatency(Date.now() - turnStartRef.current);
               turnStartRef.current = 0;
-              // Simulate backend turn info
-              store.setTurnInfo(store.turnNumber + 1, store.totalTurns);
-              setTimeout(() => store.commitTutorResponse(), 400);
+              const nextTurn = store.turnNumber + 1;
+              store.setTurnInfo(nextTurn, store.totalTurns);
+
+              const mockVisualSteps = [
+                { stepId: 1, stepLabel: "Sunlight", emoji: "☀️ → 🌿", caption: "Plants capture sunlight energy" },
+                { stepId: 2, stepLabel: "Water + CO₂", emoji: "💧 + 🌬️ → 🌿", caption: "Roots absorb water; leaves take in CO₂" },
+                { stepId: 3, stepLabel: "Chloroplast", emoji: "🌿🔬 [chloroplast]", caption: "Reactions happen inside chloroplasts" },
+                { stepId: 4, stepLabel: "Glucose", emoji: "☀️💧🌬️ → 🍬 + O₂", caption: "Light energy converts to glucose" },
+              ];
+              const stepIdx = Math.min(nextTurn - 1, mockVisualSteps.length - 1);
+              const step = mockVisualSteps[stepIdx];
+              const isLast = nextTurn >= store.totalTurns;
+              store.setVisual({
+                diagramId: "photosynthesis",
+                stepId: step.stepId,
+                stepLabel: step.stepLabel,
+                totalSteps: mockVisualSteps.length,
+                highlightKeys: [step.stepLabel.toLowerCase()],
+                caption: step.caption,
+                emojiDiagram: step.emoji,
+                turnNumber: nextTurn,
+                isRecap: isLast,
+              });
+
+              setTimeout(() => {
+                store.commitTutorResponse();
+                if (isLast) {
+                  setTimeout(() => {
+                    store.setSessionComplete(true);
+                  }, 200);
+                }
+              }, 400);
             }
           }, i * 80);
         });
@@ -488,7 +539,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
   const sendStartLesson = useCallback(() => {
     if (optsRef.current._useMock) {
-      // Mock greeting: simulate a short delay then a greeting response
       setTimeout(() => {
         const { store } = optsRef.current;
         store.startGreeting();
@@ -497,9 +547,19 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         for (const word of words) {
           store.appendStreamWord(word);
         }
+        store.setVisual({
+          diagramId: "photosynthesis",
+          stepId: 0,
+          stepLabel: "Introduction",
+          totalSteps: 4,
+          highlightKeys: ["intro"],
+          caption: "How do plants make food?",
+          emojiDiagram: "🌱 + ☀️ → ❓",
+          turnNumber: 0,
+          isRecap: false,
+        });
         setTimeout(() => {
           store.commitTutorResponse();
-          // After commit, set mode to idle (simulating greeting_complete)
           setTimeout(() => store.setMode("idle"), 100);
         }, 400);
       }, 800);

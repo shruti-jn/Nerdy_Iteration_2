@@ -36,6 +36,18 @@ export interface TurnLatency {
   total_ms: number | null;
 }
 
+export interface LessonVisualState {
+  diagramId: string;
+  stepId: number;
+  stepLabel: string;
+  totalSteps: number;
+  highlightKeys: string[];
+  caption: string | null;
+  emojiDiagram: string;
+  turnNumber: number;
+  isRecap: boolean;
+}
+
 export interface SessionStore {
   view: AppView;
   mode: SessionMode;
@@ -53,6 +65,10 @@ export interface SessionStore {
   streamingWords: string[];
   /** User-visible error message (e.g. mic permission denied). Null when no error. */
   error: string | null;
+  /** Current visual teaching state (step diagram + progress). Null before first visual update. */
+  visual: LessonVisualState | null;
+  /** Update the visual teaching state from a lesson_visual_update message. */
+  setVisual: (state: LessonVisualState | null) => void;
   setView: (view: AppView) => void;
   setTopic: (id: TopicId, displayName: string) => void;
   setMode: (mode: SessionMode) => void;

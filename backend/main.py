@@ -23,10 +23,13 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
+from datetime import datetime, timezone
+from pythonjsonlogger.json import JsonFormatter
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from adapters.avatar_adapter import SimliAvatarAdapter
+from adapters.spatialreal_adapter import SpatialRealAdapter
 from adapters.llm_engine import GroqLLMEngine
 from config import settings
 from observability.langfuse_setup import init_langfuse, shutdown_langfuse
@@ -34,29 +37,45 @@ from pipeline.orchestrator_custom import CustomOrchestrator
 from pipeline.session_manager import SessionManager
 from pipeline.session_store import SessionStore
 from prompts import build_prompt, AVAILABLE_TOPICS
+from prompts.visuals import get_visual_for_step, get_total_steps, visual_to_message
+from observability.braintrust_logger import BraintrustLogger
 
 logger = logging.getLogger("tutor")
 
+class _ISOJsonFormatter(JsonFormatter):
+    """JSON formatter with proper ISO-8601 timestamps including milliseconds."""
+    def add_fields(self, log_record, record, message_dict):
+        super().add_fields(log_record, record, message_dict)
+        log_record["timestamp"] = (
+            datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="milliseconds")
+        )
+
 _LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(_LOG_DIR, exist_ok=True)
-_fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+_json_fmt = _ISOJsonFormatter(
+    fmt="%(levelname)s %(name)s %(message)s",
+    rename_fields={"levelname": "level", "name": "logger"},
+)
 _file_handler = RotatingFileHandler(
     os.path.join(_LOG_DIR, "server.log"), maxBytes=5 * 1024 * 1024, backupCount=1
 )
-_file_handler.setFormatter(_fmt)
+_file_handler.setFormatter(_json_fmt)
 _console_handler = logging.StreamHandler()
-_console_handler.setFormatter(_fmt)
+_console_handler.setFormatter(_json_fmt)
 logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handler])
 
 # ── FastAPI app ─────────────────────────────────────────────────────────────
 
+_braintrust: BraintrustLogger | None = None
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """FastAPI lifespan: initialize on startup, clean up on shutdown."""
-    # Startup
+    global _braintrust
     init_langfuse(settings)
+    _braintrust = BraintrustLogger()
     yield
-    # Shutdown
     shutdown_langfuse()
 
 app = FastAPI(title="Live AI Video Tutor", version="0.1.0", lifespan=_lifespan)
@@ -149,10 +168,7 @@ async def session_handler(ws: WebSocket):
             session_id = client_session_id
             session_mgr = SessionManager.from_dict(saved, system_prompt, llm_engine)
             restored = True
-            logger.info(
-                "session_restore session_id=%s topic=%s turn_count=%d",
-                session_id, topic, session_mgr.turn_count,
-            )
+            logger.info("Session restored", extra={"event": "session_restore", "session_id": session_id, "topic": topic, "turn_count": session_mgr.turn_count})
         else:
             # Expired or mismatched topic — start fresh with new ID
             session_id = str(uuid.uuid4())
@@ -162,9 +178,12 @@ async def session_handler(ws: WebSocket):
         session_mgr = SessionManager(system_prompt, llm_engine)
 
     active_sessions.add(session_id)
-    logger.info("session_start session_id=%s topic=%s restored=%s", session_id, topic, restored)
+    logger.info("Session started", extra={"event": "session_start", "session_id": session_id, "topic": topic, "restored": restored})
     send = lambda data: _send_json(ws, data)
-    orchestrator = CustomOrchestrator(settings, session_id, send, max_turns=MAX_TURNS)
+    # Allow URL param ?avatar=spatialreal to override the env default
+    avatar_param = ws.query_params.get("avatar", "").lower()
+    avatar_provider = avatar_param if avatar_param in ("simli", "spatialreal") else settings.avatar_provider
+    orchestrator = CustomOrchestrator(settings, session_id, send, max_turns=MAX_TURNS, braintrust_logger=_braintrust)
     simli: SimliAvatarAdapter | None = None
     turn_queue: asyncio.Queue | None = None
     turn_task: asyncio.Task | None = None
@@ -179,15 +198,52 @@ async def session_handler(ws: WebSocket):
                 "topic": topic,
                 "total_turns": MAX_TURNS,
                 "turn_count": session_mgr.turn_count,
+                "avatar_provider": avatar_provider,
                 "history": [
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in session_mgr.history
                 ],
             })
+            # Send visual for the approximate current step (Phase 1.5)
+            restore_step = min(session_mgr.turn_count, get_total_steps(topic) - 1)
+            restore_step = max(0, restore_step)  # clamp to 0 if no steps
+            restore_visual = get_visual_for_step(topic, restore_step)
+            if restore_visual:
+                await _send_json(ws, visual_to_message(restore_visual, topic, session_mgr.turn_count))
+            # SpatialReal needs a fresh token on restore too
+            if avatar_provider == "spatialreal":
+                try:
+                    sr_adapter = SpatialRealAdapter(settings)
+                    sr_init = await sr_adapter.generate_session_token()
+                    await _send_json(ws, {
+                        "type": "spatialreal_session_init",
+                        "session_token": sr_init["session_token"],
+                        "app_id": sr_init["app_id"],
+                        "avatar_id": sr_init["avatar_id"],
+                    })
+                except Exception as exc:
+                    logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
+                    await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
         else:
-            await _send_json(ws, {"type": "session_start", "session_id": session_id, "topic": topic, "total_turns": MAX_TURNS})
+            await _send_json(ws, {"type": "session_start", "session_id": session_id, "topic": topic, "total_turns": MAX_TURNS, "avatar_provider": avatar_provider})
 
-        logger.debug("session_start sent session_id=%s", session_id)
+            # SpatialReal: generate session token and send init message
+            if avatar_provider == "spatialreal":
+                try:
+                    sr_adapter = SpatialRealAdapter(settings)
+                    sr_init = await sr_adapter.generate_session_token()
+                    await _send_json(ws, {
+                        "type": "spatialreal_session_init",
+                        "session_token": sr_init["session_token"],
+                        "app_id": sr_init["app_id"],
+                        "avatar_id": sr_init["avatar_id"],
+                    })
+                    logger.info("spatialreal_session_init sent session_id=%s", session_id)
+                except Exception as exc:
+                    logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
+                    await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
+
+        logger.debug("Session start sent", extra={"event": "session_start_sent", "session_id": session_id})
         while True:
             raw = await ws.receive()
             if "bytes" in raw and raw["bytes"] is not None:
@@ -195,10 +251,10 @@ async def session_handler(ws: WebSocket):
                     turn_queue.put_nowait(raw["bytes"])
                 else:
                     if session_mgr.turn_count >= MAX_TURNS:
-                        logger.debug("turn_limit_reached session_id=%s turn_count=%d", session_id, session_mgr.turn_count)
+                        logger.debug("Turn limit reached", extra={"event": "turn_limit_reached", "session_id": session_id, "turn_count": session_mgr.turn_count})
                         await _send_json(ws, {"type": "session_complete", "turn_number": session_mgr.turn_count, "total_turns": MAX_TURNS, "message": "Great job! You've completed all your questions for this session."})
                         continue
-                    logger.info("audio_first_chunk session_id=%s turn=%d chunk_bytes=%d — new turn started by first audio", session_id, session_mgr.turn_count + 1, len(raw["bytes"]))
+                    logger.info("Audio first chunk received", extra={"event": "audio_first_chunk", "session_id": session_id, "turn": session_mgr.turn_count + 1, "chunk_bytes": len(raw["bytes"])})
                     turn_queue = asyncio.Queue()
                     turn_task = asyncio.create_task(orchestrator.handle_turn(_stream_from_queue(turn_queue), session_mgr))
                     turn_queue.put_nowait(raw["bytes"])

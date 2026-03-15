@@ -1,1 +1,1 @@
-"""Observability package — Logfire tracing, Braintrust eval logging, and scoring functions."""
+"""Observability package — Langfuse LLM tracing, Braintrust eval logging, and Socratic scoring."""

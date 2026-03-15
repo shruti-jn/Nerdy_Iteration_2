@@ -3,6 +3,7 @@ import { TopBar } from "./components/TopBar";
 import { ConversationHistory } from "./components/ConversationHistory";
 import { AvatarFeed } from "./components/AvatarFeed";
 import { TutorResponse } from "./components/TutorResponse";
+import { TeachingPanel } from "./components/TeachingPanel";
 import { BottomBar } from "./components/BottomBar";
 import { TopicSelectView } from "./components/TopicSelectView";
 import { GettingReadyView } from "./components/GettingReadyView";
@@ -24,6 +25,14 @@ function ts(): string {
 
 export function App() {
   const store = useSessionStore();
+
+  // Expose store in mock/test mode so E2E tests can manipulate state
+  useEffect(() => {
+    if (IS_MOCK) {
+      (window as unknown as Record<string, unknown>).__store = store;
+    }
+  });
+
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -403,7 +412,7 @@ export function App() {
         </div>
 
         <div className="app__col app__col--right">
-          <TutorResponse mode={store.mode} streamingWords={store.streamingWords} />
+          <TeachingPanel mode={store.mode} streamingWords={store.streamingWords} visual={store.visual} />
         </div>
       </main>
 

@@ -912,3 +912,114 @@ Decisions:
 - **Concurrency group with cancel-in-progress**: Ensures rapid pushes don't queue stale deploys. Only the latest commit deploys.
 
 Refs: `.github/workflows/deploy.yml:1-59`, `fly.toml:1-32`, `Dockerfile:1-36`
+
+---
+
+## 2026-03-15 — Visual teaching: frontend store, socket, UI components, and App integration (Phases 1.1, 1.3, 1.4)
+
+What: Implemented the frontend half of the visual teaching system. Added `visual` state and `setVisual` callback to `useSessionStore`, extended `useTutorSocket` to parse `lesson_visual_update` messages with snake_case→camelCase mapping, created three new components (`StepProgress`, `ConceptCanvas`, `TeachingPanel`), and wired `TeachingPanel` into the App right-rail replacing `TutorResponse` in the lesson view.
+
+Why: Phase 1 of the visual teaching system requires the frontend to receive and display curriculum step visuals (emoji diagrams, step progress, captions) alongside tutor text. The store and socket changes (Phase 1.1) enable receiving visual state from the backend. The UI components (Phase 1.3) render the visual content. The App integration (Phase 1.4) replaces the right-rail panel.
+
+How:
+- **Store (Phase 1.1)**: Added `useState<LessonVisualState | null>(null)` and `setVisual` callback to `useSessionStore`. `reset()` and `restoreSession()` clear visual to null. `bargeIn()` intentionally preserves visual (last known step stays visible during interruption).
+- **Socket (Phase 1.1)**: Extended `ServerMessage` union with `lesson_visual_update` type. Added handler branch that maps wire fields (`diagram_id` → `diagramId`, `step_id` → `stepId`, etc.) and defaults optional fields (`highlight_keys` → `[]`, `caption` → `null`).
+- **StepProgress (Phase 1.3)**: Horizontal dot stepper bar. Dots fill up to `currentStep`, active dot scales up with glow. On recap, all dots fill and label shows "Complete!".
+- **ConceptCanvas (Phase 1.3)**: Renders emoji diagram in large centered text with caption below. Fade transition on step change (180ms hide→show). Recap mode adds accent border + glow + checkmark.
+- **TeachingPanel (Phase 1.3)**: Composite panel replacing TutorResponse. When `visual` is null, renders identically to TutorResponse (backward compatible). When visual is present, shows header ("Concept Map"), StepProgress, ConceptCanvas, divider, then tutor text + waveform. Mobile CSS hides visual section, showing text only.
+- **App integration (Phase 1.4)**: Replaced `<TutorResponse>` with `<TeachingPanel visual={store.visual}>` in lesson view. TutorResponse.tsx kept intact (not deleted). `handleBack` → `store.reset()` clears visual. Session complete shows recap visual behind CelebrationOverlay.
+- **Tests**: Added `visual: null` and `setVisual: vi.fn()` to test `makeStore()` helper. Added 2 new socket tests (camelCase mapping + optional field defaults). All 120 unit tests pass. 4 mic-pipeline failures are pre-existing. Verified app loads in browser without errors.
+
+Decisions:
+- **TeachingPanel as new component vs. extending TutorResponse**: Chose new component that replicates TutorResponse's text/waveform logic internally. Pros: clean separation, TutorResponse untouched (no regression risk), TeachingPanel owns its full layout. Cons: some CSS duplication (mitigated by using same CSS variable system). Alternative was adding visual props to TutorResponse, which would bloat a simple component.
+- **Fade transition vs. slide for step changes**: Chose 180ms opacity+translateY fade. Pros: subtle, doesn't shift layout. Cons: less dramatic than slide. Slide alternative would require fixed-height container to prevent content jump.
+
+Refs: `frontend/src/useSessionStore.ts:24,42,140,158,167`, `frontend/src/useTutorSocket.ts:58,307-318`, `frontend/src/components/StepProgress.tsx:1-33`, `frontend/src/components/ConceptCanvas.tsx:1-42`, `frontend/src/components/TeachingPanel.tsx:1-103`, `frontend/src/App.tsx:7,408`, `frontend/src/useTutorSocket.test.ts:74,93,380-440`
+
+---
+
+## 2026-03-15 — Visual teaching: Phase 1.2 — Backend orchestrator step-tag parsing and visual emission
+
+What: Modified `CustomOrchestrator` to parse `[STEP:N]` tags from LLM responses, strip them before sending to the frontend, and emit `lesson_visual_update` WebSocket messages after every turn, greeting, and session completion.
+
+Why: The teaching panel needs to know which curriculum step the tutor is currently on. Since the LLM drives curriculum progression (not the turn counter), the orchestrator must extract the step tag from LLM output and look up the corresponding visual from the registry created in Phase 0.
+
+How: (1) Added imports for `parse_step_tag`, `get_visual_for_step`, `get_recap_visual`, `visual_to_message` from `prompts.visuals`. (2) Added `self._last_step_id: int = 0` to track the last known step across turns (used as fallback when the LLM omits the tag). (3) In `handle_turn()`: after LLM streaming completes, call `parse_step_tag(raw_text)` to extract step_id and clean text; use clean text (no tag) for `tutor_text_chunk`, `session.append_turn()`, and scoring; send `lesson_visual_update` after `tutor_text_chunk`; send recap visual after `session_complete`. (4) In `handle_greeting()`: strip any step tag, hardcode step 0, send `lesson_visual_update` for step 0 between `tutor_text_chunk` and `greeting_complete`. (5) Error and barge-in paths intentionally do NOT send visual updates — the panel keeps the last known step.
+
+Decisions:
+- **Visual sent after tutor_text_chunk (not before)**: The student sees the tutor text first, then the visual updates. This avoids spoiling the concept before the tutor introduces it verbally. The alternative (visual first) would break the Socratic flow.
+- **Greeting visual between tutor_text_chunk and greeting_complete**: Ensures the frontend has the visual before the greeting_complete signal enables the mic, so the panel is populated when the student starts interacting.
+
+Refs: `backend/pipeline/orchestrator_custom.py:37-42` (imports), `backend/pipeline/orchestrator_custom.py:77` (`_last_step_id`), `backend/pipeline/orchestrator_custom.py:183-230` (handle_turn visual logic), `backend/pipeline/orchestrator_custom.py:443-462` (handle_greeting visual logic)
+
+## 2026-03-15 — Update Simli API keys on Fly.io and redeploy
+
+What: Updated `SIMLI_API_KEY` and `SIMLI_FACE_ID` secrets on the `nerdy-tutor` Fly.io app and triggered a rolling redeploy of both machines.
+
+Why: User obtained new Simli API credentials and face ID that needed to be deployed to production.
+
+How: Ran `flyctl secrets set SIMLI_API_KEY=... SIMLI_FACE_ID=... --app nerdy-tutor`. Fly performed a rolling update of both machines (781109ec336498, d8929e9ce49328), both came up healthy, and DNS was verified for nerdy-tutor.fly.dev.
+
+Refs: `fly.toml:1` (app name), `backend/config.py:20,60` (settings that consume these env vars)
+
+## 2026-03-15 — Wire frontend visual state pipeline (types, store, socket)
+
+What: Added `LessonVisualState` type to `types.ts`, wired `visual`/`setVisual` state into `useSessionStore`, and added the `lesson_visual_update` WebSocket message handler in `useTutorSocket`.
+
+Why: The UI components (TeachingPanel, ConceptCanvas, StepProgress) already existed and consumed `store.visual`, but the data pipeline from WebSocket messages through the store was not connected. This wiring completes Phase 1.1 of the visual teaching feature so backend `lesson_visual_update` messages flow through to the UI.
+
+How: Three surgical edits across three files: (1) Added `LessonVisualState` interface and `visual`/`setVisual` members to `SessionStore` in `types.ts`. (2) Added `useState<LessonVisualState | null>` and `setVisual` callback in `useSessionStore.ts`, plus clearing visual state in `reset()` and `restoreSession()` (but not `bargeIn()` — keeps last known step). (3) Added `lesson_visual_update` variant to the `ServerMessage` union type and a handler branch in `handleMessage` that maps snake_case server fields to camelCase `LessonVisualState` with defaults for optional fields (`highlight_keys` defaults to `[]`, `caption` defaults to `null`). All 89 relevant unit tests pass (25 useTutorSocket + 64 frontend.test).
+
+Decisions:
+- **Visual state cleared on reset/restoreSession but NOT on bargeIn**: Barge-in should keep the last visual step visible (the student interrupted the tutor mid-explanation, the diagram is still relevant). Reset and restore clear it because the session context is changing and the backend will send a fresh visual update. Alternative was clearing on bargeIn too, but that would cause a jarring visual flash.
+- **Defaults for optional server fields**: `highlight_keys` defaults to `[]` (empty array) and `caption` to `null` rather than `undefined`, matching the existing `LessonVisualState` type contract and ensuring downstream components don't need null-vs-undefined checks.
+
+Refs: `frontend/src/types.ts:39-49` (LessonVisualState), `frontend/src/types.ts:68-71` (SessionStore visual/setVisual), `frontend/src/useSessionStore.ts:24` (visual useState), `frontend/src/useSessionStore.ts:43` (setVisual callback), `frontend/src/useSessionStore.ts:143,159` (clear in restoreSession/reset), `frontend/src/useSessionStore.ts:177-178` (return object), `frontend/src/useTutorSocket.ts:58-59` (ServerMessage union), `frontend/src/useTutorSocket.ts:348-359` (lesson_visual_update handler)
+
+## 2026-03-15 — Visual teaching: backend data pipeline (step-tag prompt, orchestrator emission, session restore visual)
+
+What: Added step-tagging instruction to the Socratic system prompt, wired step-tag parsing and `lesson_visual_update` emission into the orchestrator (`handle_turn`, `handle_greeting`, session completion), and added visual emission after `session_restore` in `main.py`.
+
+Why: The frontend visual teaching components (TeachingPanel, ConceptCanvas, StepProgress) were built and the `lesson_visual_update` WebSocket handler was wired, but the backend never emitted these messages. Without the backend pipeline, the teaching panel had no data. This completes Phases 1.2 and 1.5 of the visual teaching system.
+
+How:
+- **System prompt** (`socratic_system.py`): Appended a `STEP TAGGING` instruction block requiring the LLM to prefix every response with `[STEP:N]` (0=hook, 1-6=content, 7=teach-back for Newton's Laws). The tag is stripped before the student sees it.
+- **Orchestrator** (`orchestrator_custom.py`): (1) Added import for `parse_step_tag`, `get_visual_for_step`, `get_recap_visual`, `visual_to_message`. (2) Added `self._last_step_id: int = 0` for fallback when LLM omits the tag. (3) In `handle_turn()`: call `parse_step_tag(full_text)` to extract step and clean text; use `clean_text` for `session.append_turn()` and `tutor_text_chunk`; send `lesson_visual_update` after `tutor_text_chunk`; send recap visual after `session_complete`. (4) In `handle_greeting()`: strip step tag from greeting, use clean text for history and `tutor_text_chunk`, hardcode step 0 visual between `tutor_text_chunk` and `greeting_complete`, set `self._last_step_id = 0`. (5) Error and barge-in paths intentionally do NOT send visual updates.
+- **Session restore** (`main.py`): Added import for `get_visual_for_step`, `get_total_steps`, `visual_to_message` at top level. After sending `session_restore` message, computes `restore_step = clamp(turn_count, 0, total_steps-1)` and sends `lesson_visual_update` so the teaching panel populates immediately on reconnect.
+
+Decisions:
+- **`clean_text` used for both `session.append_turn()` and `tutor_text_chunk`**: The `[STEP:N]` tag is an internal signal, not student-facing content. Storing it in history would confuse the LLM on subsequent turns and show raw tags in session restore. Alternative was stripping only for the frontend message but keeping in history — rejected because it pollutes the context window.
+- **Greeting hardcodes step 0 instead of relying on LLM tag**: The greeting is always the hook (step 0) by design. Relying on the LLM to include `[STEP:0]` would be fragile. Hardcoding is deterministic and costs nothing.
+- **Session restore uses `min(turn_count, total_steps-1)` as approximate step**: Without persisting the last step ID across sessions, the turn count is the best available proxy. It slightly overestimates (not every turn advances the step), but `get_visual_for_step` clamps internally, so this is safe.
+
+Refs: `backend/prompts/socratic_system.py:40-41`, `backend/pipeline/orchestrator_custom.py:29` (import), `backend/pipeline/orchestrator_custom.py:68` (`_last_step_id`), `backend/pipeline/orchestrator_custom.py:188-235` (handle_turn step parsing + visual), `backend/pipeline/orchestrator_custom.py:418-439` (handle_greeting step parsing + visual), `backend/main.py:37` (import), `backend/main.py:188-193` (session restore visual)
+
+---
+
+### Visual Teaching: Frontend Tests (Phase 1.6 — component + store)
+
+What: Created `frontend/src/visual-teaching.test.tsx` with 23 tests covering the visual teaching feature: useSessionStore visual state management (5 tests), StepProgress component rendering (6 tests), ConceptCanvas component rendering (5 tests), and TeachingPanel composite component (7 tests).
+
+Why: Phase 1.6 was marked "In progress" with only socket-level tests. The store, StepProgress, ConceptCanvas, and TeachingPanel components had no test coverage. These tests verify: default null visual state, setVisual updates, reset/restoreSession clearing visual, bargeIn preserving visual, dot rendering/filled/active states, recap mode, emoji diagram rendering, caption presence/absence, checkmark on recap, title switching between "Tutor Response" and "Concept Map", backward-compatible text-only mode, empty state, live badge, and waveform indicator.
+
+How:
+- **Store tests**: Used `renderHook` with `useSessionStore` to verify `visual` starts null, `setVisual` sets it, `reset()` and `restoreSession()` clear it, and `bargeIn()` preserves it (important: visual should survive barge-in so the teaching panel stays visible).
+- **StepProgress tests**: Rendered with various prop combinations and asserted dot count via `aria-label` queries, filled/active CSS classes via `className` inspection, step label text, and recap mode showing "Complete!" with all dots filled.
+- **ConceptCanvas tests**: Verified emoji diagram renders in DOM, caption renders when provided and absent when null (checked via `.concept-canvas__caption` selector), and checkmark (✓) renders only on recap via `aria-label="Complete"`.
+- **TeachingPanel tests**: Verified title toggles between "Tutor Response" (visual=null) and "Concept Map" (visual set), streaming words render in both visual and non-visual modes, empty state message shows when idle with no words, live badge appears during tutor-responding, and waveform element exists via `aria-label="Audio waveform"`.
+- Ran full frontend test suite — all 23 new tests pass; pre-existing mic-pipeline failures and Playwright-under-vitest errors are unrelated.
+
+Refs: `frontend/src/visual-teaching.test.tsx:1-247`, `frontend/src/useSessionStore.ts:24,43,134-146,148-160`, `frontend/src/components/StepProgress.tsx:1-33`, `frontend/src/components/ConceptCanvas.tsx:1-41`, `frontend/src/components/TeachingPanel.tsx:1-104`
+
+## 2026-03-15 12:45
+What: Added comprehensive backend test suite for visual teaching registry (`backend/tests/test_visuals.py`) — 23 tests covering `parse_step_tag`, `get_visual_for_step`, `get_recap_visual`, `get_total_steps`, and `visual_to_message`
+Why: The backend visual registry (`prompts/visuals.py`) had no dedicated unit tests; frontend visual tests existed but the backend logic (step-tag parsing, clamping, recap lookup, message serialisation) was untested
+How:
+- Created `backend/tests/test_visuals.py` with 5 test classes and 23 tests, following the existing pytest style (no `unittest.TestCase`, grouped by function under test).
+- **TestParseStepTag (6 tests)**: valid tag extraction, no-tag passthrough, step 0 with leading whitespace, newline as whitespace after tag, mid-string tag rejection, large step numbers.
+- **TestGetVisualForStep (8 tests)**: photosynthesis step 0 and 6 label checks, high/negative step_id clamping, newtons_laws step 0 and 7, unknown topic returns None, exhaustive emoji_diagram non-emptiness across all steps of both topics.
+- **TestGetRecapVisual (3 tests)**: both topics return step_id=-1 with non-empty emoji_diagram, unknown topic returns None.
+- **TestGetTotalSteps (3 tests)**: photosynthesis=7, newtons_laws=8, unknown=0.
+- **TestVisualToMessage (3 tests)**: normal step dict shape and values, recap flag propagation, exact 10-key schema validation.
+- All 23 tests pass. Pre-existing failures in `test_server.py`, `test_observability.py`, `test_eval_artifacts.py`, and frontend `mic-pipeline` are unrelated.
+Refs: `backend/tests/test_visuals.py:1-193`, `backend/prompts/visuals.py:28-242`
