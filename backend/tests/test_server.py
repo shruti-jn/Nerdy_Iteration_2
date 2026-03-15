@@ -83,6 +83,7 @@ def test_ws_session_start():
         msg = json.loads(ws.receive_text())
         assert msg["type"] == "session_start"
         assert "session_id" in msg
+        assert msg["simli_mode"] == "custom"
 
 
 @pytest.mark.contract
@@ -122,6 +123,52 @@ def test_ws_passes_query_avatar_provider_to_orchestrator():
             assert msg["type"] == "session_start"
 
     assert captured["avatar_provider"] == "spatialreal"
+
+
+@pytest.mark.contract
+def test_ws_session_start_resolves_simli_mode_from_query():
+    """When enabled, simli_mode query param should override env default."""
+    import main as main_module
+
+    with (
+        patch.object(main_module.settings, "simli_sdk_enabled", True),
+        patch.object(main_module.settings, "simli_mode", "custom"),
+        patch.object(main_module.settings, "simli_api_key", "fake-key"),
+        patch.object(main_module.settings, "simli_face_id", "fake-face"),
+        patch("main.SimliAvatarAdapter.initialize_session", AsyncMock(return_value={"session_token": "tok", "ice_servers": []})),
+    ):
+        client = TestClient(app)
+        with client.websocket_connect("/session?avatar=simli&simli_mode=sdk") as ws:
+            start_msg = json.loads(ws.receive_text())
+            assert start_msg["type"] == "session_start"
+            assert start_msg["simli_mode"] == "sdk"
+            assert start_msg["simli_mode_source"] == "url"
+
+            sdk_msg = json.loads(ws.receive_text())
+            assert sdk_msg["type"] == "simli_sdk_init"
+            assert sdk_msg["session_token"] == "tok"
+
+
+@pytest.mark.contract
+def test_ws_simli_sdp_offer_rejected_in_sdk_mode():
+    """simli_sdp_offer is rejected when session is in SDK mode."""
+    import main as main_module
+
+    with (
+        patch.object(main_module.settings, "simli_sdk_enabled", True),
+        patch.object(main_module.settings, "simli_mode", "custom"),
+        patch.object(main_module.settings, "simli_api_key", "fake-key"),
+        patch.object(main_module.settings, "simli_face_id", "fake-face"),
+        patch("main.SimliAvatarAdapter.initialize_session", AsyncMock(return_value={"session_token": "tok", "ice_servers": []})),
+    ):
+        client = TestClient(app)
+        with client.websocket_connect("/session?avatar=simli&simli_mode=sdk") as ws:
+            ws.receive_text()  # session_start
+            ws.receive_text()  # simli_sdk_init
+            ws.send_text(json.dumps({"type": "simli_sdp_offer", "sdp": "v=0..."}))
+            msg = json.loads(ws.receive_text())
+            assert msg["type"] == "error"
+            assert msg["code"] == "SIMLI_MODE_UNSUPPORTED"
 
 
 @pytest.mark.contract

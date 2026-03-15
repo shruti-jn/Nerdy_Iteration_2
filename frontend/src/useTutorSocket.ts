@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from "react";
-import type { SessionStore, AvatarProvider, LessonVisualState } from "./types";
+import type { SessionStore, AvatarProvider, LessonVisualState, SimliMode } from "./types";
 
 /** Returns a compact timestamp prefix: [HH:MM:SS.mmm] */
 function ts(): string {
@@ -23,6 +23,8 @@ export interface TutorSocketOptions {
   onSessionStart?: (kind: "start" | "restore") => void;
   /** Called with the avatar provider from session_start/session_restore */
   onAvatarProvider?: (provider: AvatarProvider) => void;
+  /** Called with the active Simli connection mode from session_start/session_restore */
+  onSimliMode?: (mode: SimliMode) => void;
   /** Called with raw PCM bytes for each audio_chunk — use to forward to Simli DataChannel */
   onAudioChunk?: (pcm: Uint8Array) => void;
   /** Return false to suppress browser AudioContext playback for a given mode/provider. */
@@ -33,6 +35,8 @@ export interface TutorSocketOptions {
   onSimliError?: (message: string) => void;
   /** Called when the backend sends spatialreal_session_init with token and config */
   onSpatialRealInit?: (sessionToken: string, appId: string, avatarId: string) => void;
+  /** Called when the backend sends simli_sdk_init with token and ICE config */
+  onSimliSdkInit?: (sessionToken: string, iceServers: RTCIceServer[] | null) => void;
   /** Skip real WebSocket and simulate a fake tutor response (for local UI dev). Default false. */
   _useMock?: boolean;
 }
@@ -57,9 +61,10 @@ export interface TutorSocket {
 }
 
 type ServerMessage =
-  | { type: "session_start"; session_id: string; topic?: string; total_turns?: number; avatar_provider?: AvatarProvider }
-  | { type: "session_restore"; session_id: string; topic?: string; total_turns?: number; turn_count?: number; avatar_provider?: AvatarProvider; history?: Array<{ role: string; content: string }> }
+  | { type: "session_start"; session_id: string; topic?: string; total_turns?: number; avatar_provider?: AvatarProvider; simli_mode?: SimliMode }
+  | { type: "session_restore"; session_id: string; topic?: string; total_turns?: number; turn_count?: number; avatar_provider?: AvatarProvider; simli_mode?: SimliMode; history?: Array<{ role: string; content: string }> }
   | { type: "spatialreal_session_init"; session_token: string; app_id: string; avatar_id: string }
+  | { type: "simli_sdk_init"; session_token: string; ice_servers?: RTCIceServer[] }
   | { type: "tutor_text_chunk"; text: string; timing: Record<string, number | null>; is_greeting?: boolean }
   | { type: "audio_chunk"; data: string }
   | { type: "simli_sdp_answer"; sdp: string; iceServers?: RTCIceServer[] }
@@ -90,10 +95,16 @@ type ServerMessage =
 export const SESSION_ID_KEY = "tutorSessionId";
 export const SESSION_TOPIC_KEY = "tutorSessionTopicId";
 export const SESSION_AVATAR_KEY = "tutorSessionAvatar";
+export const SESSION_SIMLI_MODE_KEY = "tutorSessionSimliMode";
 
 function getRequestedAvatarProvider(): AvatarProvider {
   const avatarParam = new URLSearchParams(window.location.search).get("avatar");
   return avatarParam === "spatialreal" ? "spatialreal" : "simli";
+}
+
+function getRequestedSimliMode(): SimliMode {
+  const modeParam = new URLSearchParams(window.location.search).get("simli_mode");
+  return modeParam === "sdk" ? "sdk" : "custom";
 }
 
 function getSessionIdFromUrl(): string | null {
@@ -114,6 +125,7 @@ function clearPersistedSession(): void {
   localStorage.removeItem(SESSION_ID_KEY);
   localStorage.removeItem(SESSION_TOPIC_KEY);
   localStorage.removeItem(SESSION_AVATAR_KEY);
+  localStorage.removeItem(SESSION_SIMLI_MODE_KEY);
   syncSessionIdInUrl(null);
 }
 
@@ -159,15 +171,19 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     if (opts.topicId) params.set("topic", opts.topicId);
     const urlSessionId = getSessionIdFromUrl();
     const savedAvatar = localStorage.getItem(SESSION_AVATAR_KEY);
+    const savedSimliMode = localStorage.getItem(SESSION_SIMLI_MODE_KEY);
     const requestedAvatar = getRequestedAvatarProvider();
+    const requestedSimliMode = getRequestedSimliMode();
     if (
       !freshSessionRef.current &&
       urlSessionId &&
-      (savedAvatar === null || savedAvatar === requestedAvatar)
+      (savedAvatar === null || savedAvatar === requestedAvatar) &&
+      (savedSimliMode === null || savedSimliMode === requestedSimliMode)
     ) {
       params.set("session_id", urlSessionId);
     }
     if (requestedAvatar) params.set("avatar", requestedAvatar);
+    if (requestedAvatar === "simli") params.set("simli_mode", requestedSimliMode);
     const qs = params.toString() ? `?${params.toString()}` : "";
     if (opts.serverUrl) {
       if (!qs) return opts.serverUrl;
@@ -332,12 +348,14 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       if (msg.type === "session_start") {
         console.debug(ts(), "[TutorSocket] session_start received, session_id:", msg.session_id, "topic:", msg.topic, "avatar_provider:", msg.avatar_provider);
         const persistedAvatar = msg.avatar_provider ?? getRequestedAvatarProvider();
+        const persistedSimliMode = msg.simli_mode ?? getRequestedSimliMode();
         freshSessionRef.current = false;
         resetTurnSync(0);
         setSessionKind("start");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
         if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
+        localStorage.setItem(SESSION_SIMLI_MODE_KEY, persistedSimliMode);
         syncSessionIdInUrl(msg.session_id);
         // #region agent log
         fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:305",message:"session_start_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
@@ -351,6 +369,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
         }
+        if (msg.simli_mode) {
+          optsRef.current.onSimliMode?.(msg.simli_mode);
+        }
         onSessionStart?.("start");
       } else if (msg.type === "session_restore") {
         console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count, "avatar_provider:", msg.avatar_provider);
@@ -358,12 +379,14 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H1",location:"frontend/src/useTutorSocket.ts:317",message:"session_restore_received",data:{view:store.view,turnCount:msg.turn_count ?? 0,historyCount:(msg.history ?? []).length,avatarProvider:msg.avatar_provider ?? null},timestamp:Date.now()})}).catch(()=>{});
         // #endregion
         const persistedAvatar = localStorage.getItem(SESSION_AVATAR_KEY) ?? msg.avatar_provider ?? getRequestedAvatarProvider();
+        const persistedSimliMode = localStorage.getItem(SESSION_SIMLI_MODE_KEY) ?? msg.simli_mode ?? getRequestedSimliMode();
         freshSessionRef.current = false;
         resetTurnSync(msg.turn_count ?? 0);
         setSessionKind("restore");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
         if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
+        localStorage.setItem(SESSION_SIMLI_MODE_KEY, persistedSimliMode);
         syncSessionIdInUrl(msg.session_id);
         // #region agent log
         fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:326",message:"session_restore_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
@@ -371,6 +394,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         // Notify App which avatar provider is active
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
+        }
+        if (msg.simli_mode) {
+          optsRef.current.onSimliMode?.(msg.simli_mode);
         }
         // Convert backend history [{role, content}] to ConversationEntry[]
         const restoredHistory = (msg.history ?? []).map((entry, idx) => ({
@@ -464,6 +490,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       } else if (msg.type === "spatialreal_session_init") {
         console.debug(ts(), "[TutorSocket] spatialreal_session_init received, app_id:", msg.app_id, "avatar_id:", msg.avatar_id);
         optsRef.current.onSpatialRealInit?.(msg.session_token, msg.app_id, msg.avatar_id);
+      } else if (msg.type === "simli_sdk_init") {
+        console.debug(ts(), "[TutorSocket] simli_sdk_init received, ice_servers:", msg.ice_servers?.length ?? 0);
+        optsRef.current.onSimliSdkInit?.(msg.session_token, msg.ice_servers ?? null);
       } else if (msg.type === "student_transcript") {
         store.updateLastStudentUtterance(msg.text);
       } else if (msg.type === "student_partial") {

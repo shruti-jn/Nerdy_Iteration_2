@@ -100,6 +100,35 @@ latest_metrics: dict[str, dict] = {}
 session_store = SessionStore()
 
 
+def _resolve_avatar_provider(avatar_query: str, default_provider: str) -> str:
+    avatar_param = (avatar_query or "").lower()
+    if avatar_param in ("simli", "spatialreal"):
+        return avatar_param
+    return default_provider if default_provider in ("simli", "spatialreal") else "simli"
+
+
+def _resolve_simli_mode(simli_mode_query: str, env_default: str, sdk_enabled: bool) -> tuple[str, str]:
+    """Resolve Simli mode with URL override and env fallback.
+
+    Returns:
+        (mode, source) where source is one of url/env/default/forced.
+    """
+    requested = (simli_mode_query or "").lower()
+    env_mode = (env_default or "").lower()
+
+    if requested in ("custom", "sdk"):
+        if requested == "sdk" and not sdk_enabled:
+            return "custom", "forced"
+        return requested, "url"
+
+    if env_mode in ("custom", "sdk"):
+        if env_mode == "sdk" and not sdk_enabled:
+            return "custom", "forced"
+        return env_mode, "env"
+
+    return "custom", "default"
+
+
 # ── HTTP endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/health")
@@ -206,8 +235,22 @@ async def session_handler(ws: WebSocket):
     logger.info("Session started", extra={"event": "session_start", "session_id": session_id, "topic": topic, "restored": restored})
     send = lambda data: _send_json(ws, data)
     # Allow URL param ?avatar=spatialreal to override the env default
-    avatar_param = ws.query_params.get("avatar", "").lower()
-    avatar_provider = avatar_param if avatar_param in ("simli", "spatialreal") else settings.avatar_provider
+    avatar_provider = _resolve_avatar_provider(ws.query_params.get("avatar", ""), settings.avatar_provider)
+    simli_mode = "custom"
+    simli_mode_source = "not_applicable"
+    if avatar_provider == "simli":
+        simli_mode, simli_mode_source = _resolve_simli_mode(
+            ws.query_params.get("simli_mode", ""),
+            settings.simli_mode,
+            settings.simli_sdk_enabled,
+        )
+    logger.info(
+        "avatar_mode_selected session_id=%s avatar_provider=%s simli_mode=%s source=%s",
+        session_id,
+        avatar_provider,
+        simli_mode,
+        simli_mode_source,
+    )
     orchestrator = CustomOrchestrator(
         settings,
         session_id,
@@ -222,6 +265,38 @@ async def session_handler(ws: WebSocket):
     greeting_sent = False  # set True after start_lesson or continue_lesson
 
     try:
+        async def _send_simli_sdk_init_if_needed() -> None:
+            if avatar_provider != "simli" or simli_mode != "sdk":
+                return
+            if not settings.simli_api_key or not settings.simli_face_id:
+                await _send_json(
+                    ws,
+                    {
+                        "type": "error",
+                        "code": "SIMLI_NOT_CONFIGURED",
+                        "message": "SIMLI_API_KEY and SIMLI_FACE_ID must be set in .env",
+                    },
+                )
+                return
+            try:
+                sdk_session_adapter = SimliAvatarAdapter(settings)
+                sdk_session = await sdk_session_adapter.initialize_session()
+                await _send_json(
+                    ws,
+                    {
+                        "type": "simli_sdk_init",
+                        "session_token": sdk_session["session_token"],
+                        "ice_servers": sdk_session.get("ice_servers", []),
+                    },
+                )
+                logger.info("simli_sdk_init_sent session_id=%s", session_id)
+            except Exception as exc:
+                logger.error("simli_sdk_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
+                await _send_json(
+                    ws,
+                    {"type": "error", "code": "SIMLI_SDK_INIT_FAILED", "message": str(exc)},
+                )
+
         if restored:
             # Send restore message with full history so frontend can rebuild UI
             await _send_json(ws, {
@@ -231,6 +306,8 @@ async def session_handler(ws: WebSocket):
                 "total_turns": MAX_TURNS,
                 "turn_count": session_mgr.turn_count,
                 "avatar_provider": avatar_provider,
+                "simli_mode": simli_mode,
+                "simli_mode_source": simli_mode_source,
                 "history": [
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in session_mgr.history
@@ -269,11 +346,24 @@ async def session_handler(ws: WebSocket):
                 except Exception as exc:
                     logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
                     await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
+            else:
+                await _send_simli_sdk_init_if_needed()
             # Welcome-back is deferred until the frontend explicitly chooses
             # Continue. If the user picks Start Lesson instead, we now restart
             # the lesson in place on this same websocket/avatar connection.
         else:
-            await _send_json(ws, {"type": "session_start", "session_id": session_id, "topic": topic, "total_turns": MAX_TURNS, "avatar_provider": avatar_provider})
+            await _send_json(
+                ws,
+                {
+                    "type": "session_start",
+                    "session_id": session_id,
+                    "topic": topic,
+                    "total_turns": MAX_TURNS,
+                    "avatar_provider": avatar_provider,
+                    "simli_mode": simli_mode,
+                    "simli_mode_source": simli_mode_source,
+                },
+            )
 
             # SpatialReal: generate session token and send init message
             if avatar_provider == "spatialreal":
@@ -290,6 +380,8 @@ async def session_handler(ws: WebSocket):
                 except Exception as exc:
                     logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
                     await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
+            else:
+                await _send_simli_sdk_init_if_needed()
 
         logger.debug("Session start sent", extra={"event": "session_start_sent", "session_id": session_id})
         while True:
@@ -384,6 +476,16 @@ async def session_handler(ws: WebSocket):
                         turn_task = None
                         turn_queue = None
                 elif msg_type == "simli_sdp_offer":
+                    if simli_mode != "custom":
+                        await _send_json(
+                            ws,
+                            {
+                                "type": "error",
+                                "code": "SIMLI_MODE_UNSUPPORTED",
+                                "message": "simli_sdp_offer is only supported in custom mode.",
+                            },
+                        )
+                        continue
                     logger.debug("simli_sdp_offer session_id=%s sdp_len=%d", session_id, len(msg.get("sdp", "")))
                     sdp_offer = msg.get("sdp", "")
                     if not sdp_offer:

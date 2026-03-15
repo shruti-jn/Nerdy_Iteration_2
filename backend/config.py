@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     # --- Simli ---
     simli_face_id: str = Field(default="", description="Simli face ID for avatar")
+    simli_mode: str = Field(default="custom", description="Simli mode: 'custom' (legacy WebRTC bridge) or 'sdk' (frontend Simli SDK)")
+    simli_sdk_enabled: bool = Field(default=False, description="Enable Simli SDK session mode")
 
     # --- SpatialReal ---
     spatialreal_api_key: str = Field(default="", description="SpatialReal API key")

@@ -216,7 +216,7 @@ describe("useTutorSocket", () => {
       renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
 
       await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
-      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&session_id=url-session&avatar=simli");
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&session_id=url-session&avatar=simli&simli_mode=custom");
     });
 
     it("does not restore from localStorage when the URL has no session_id", async () => {
@@ -228,7 +228,7 @@ describe("useTutorSocket", () => {
       renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
 
       await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
-      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli");
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli&simli_mode=custom");
     });
 
     it("does not restore when the avatar provider changes", async () => {
@@ -240,6 +240,18 @@ describe("useTutorSocket", () => {
 
       await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
       expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=spatialreal");
+    });
+
+    it("uses simli_mode from URL and blocks restore on mode mismatch", async () => {
+      localStorage.setItem("tutorSessionAvatar", "simli");
+      localStorage.setItem("tutorSessionSimliMode", "custom");
+      window.history.replaceState({}, "", "/?session_id=saved-session&avatar=simli&simli_mode=sdk");
+
+      const store = makeStore({ topicId: "photosynthesis" as const });
+      renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
+
+      await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli&simli_mode=sdk");
     });
   });
 
@@ -385,7 +397,7 @@ describe("useTutorSocket", () => {
       expect(localStorage.getItem("tutorSessionTopicId")).toBeNull();
       expect(localStorage.getItem("tutorSessionAvatar")).toBeNull();
       expect(new URLSearchParams(window.location.search).get("session_id")).toBeNull();
-      expect(MockWebSocket.instances[1]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli");
+      expect(MockWebSocket.instances[1]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli&simli_mode=custom");
     });
 
     it("error message calls store.setMode('idle') and logs", async () => {

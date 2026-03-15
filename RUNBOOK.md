@@ -188,16 +188,16 @@ With both servers running and `VITE_MOCK=false` in `frontend/.env.development`:
 
 **Endpoint:** `ws://localhost:8000/session?topic=photosynthesis`
 
-Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `session_id` — optional resume token from the browser URL; `avatar` — optional (`simli` or `spatialreal`)
+Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `session_id` — optional resume token from the browser URL; `avatar` — optional (`simli` or `spatialreal`); `simli_mode` — optional (`custom` or `sdk`, Simli only)
 
 **Client → Server:**
 - Binary: PCM Int16 @ 16 kHz audio frames
 - JSON: `{ "type": "end_of_utterance" | "barge_in" | "start_lesson" | "continue_lesson" | "simli_sdp_offer" }`
 
 **Server → Client:**
-- `{ "type": "session_start", "session_id": "uuid", "topic": "...", "total_turns": number, "avatar_provider": "simli"|"spatialreal" }` — handshake
-- `{ "type": "session_restore", "session_id": "uuid", "turn_count": number, "history": [...] }` — resumable session payload
-- `{ "type": "lesson_visual_update", "diagramId": "...", "stepId": number, "stepLabel": "...", "totalSteps": number, "highlightKeys": [...], "caption": string|null, "turnNumber": number, "isRecap": bool }` — backend-owned visual teaching state
+- `{ "type": "session_start", "session_id": "uuid", "topic": "...", "total_turns": number, "avatar_provider": "simli"|"spatialreal", "simli_mode": "custom"|"sdk" }` — handshake
+- `{ "type": "session_restore", "session_id": "uuid", "turn_count": number, "history": [...], "avatar_provider": "simli"|"spatialreal", "simli_mode": "custom"|"sdk" }` — resumable session payload
+- `{ "type": "lesson_visual_update", "diagram_id": "...", "step_id": number, "step_label": "...", "total_steps": number, "highlight_keys": [...], "caption": string|null, "emoji_diagram": string, "turn_number": number, "is_recap": bool, "unlocked_elements"?: [...], "progress_completed"?: number, "progress_total"?: number, "progress_label"?: string }` — backend-owned visual teaching state
 - `{ "type": "student_partial", "text": "..." }` — live partial transcript (streaming STT)
 - `{ "type": "student_transcript", "text": "..." }` — final STT result
 - `{ "type": "tutor_text_chunk", "text": "...", "timing": {...}, "is_greeting": bool }` — response + latency metrics
@@ -206,6 +206,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `se
 - `{ "type": "session_complete", "turn_number": number, "total_turns": number }` — all turns used
 - `{ "type": "barge_in_ack" }` — interrupt acknowledged
 - `{ "type": "spatialreal_session_init", "session_token": "...", "app_id": "...", "avatar_id": "..." }` — SpatialReal SDK init payload (only when SpatialReal is active)
+- `{ "type": "simli_sdk_init", "session_token": "...", "ice_servers": [...] }` — Simli SDK init payload (only when `avatar=simli` and `simli_mode=sdk`)
 - `{ "type": "error", "code": "...", "message": "...", "timing": {...} }` — error with partial timing (stages that completed before the failure)
 
 **REST endpoints:**
@@ -322,6 +323,8 @@ It cannot perfectly judge every free-form student answer. If a student uses unex
 | Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |
 | Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |
 | SpatialReal avatar integration | ✅ Done | Feature flag `AVATAR_PROVIDER=spatialreal`; URL param `?avatar=spatialreal`; SDK Mode (frontend-driven); 10 backend tests |
+| Simli SDK A/B mode switch | 🚧 In progress | Added `simli_mode` URL/env resolution, `simli_sdk_init` session payload, frontend `simli-client` hook wiring, and custom-vs-sdk runtime selection scaffolding |
 | Wider concept map panel | ✅ Done | Right rail 540px desktop + 480px tablet (was 340px/280px); larger emoji diagrams (28px); asymmetric grid layout |
 | Docs and submission cleanup (Phase 6) | ✅ Done | README/RUNBOOK reconciled to current multimodal flow, commands, websocket visual contract, and artifact evidence map |
-| Demo script + latency story package | ✅ Done | Added a 10-minute presenter script with live demo flow, evidence-backed latency claims, Simli-vs-SpatialReal comparison protocol, and Langfuse+Braintrust dashboard talk track |
+| Demo script + latency story package | ✅ Done | Presenter-ready script now includes exact presenter lines, exact student mic lines, build story, Socrates VI implementation notes, concept-map explanation, and claim-safe latency guidance |
+| Evals + observability verification run | ✅ Done | Executed eval/provider validation, confirmed Langfuse no-op state when keys are missing, validated Braintrust connectivity probe, and captured artifact/log evidence with full backend/frontend test-suite reruns |

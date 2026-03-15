@@ -3,6 +3,7 @@ export type SessionMode = "idle" | "student-speaking" | "tutor-responding" | "tu
 export type AvatarConnectionState = "connecting" | "live" | "slow" | "error";
 
 export type AvatarProvider = "simli" | "spatialreal";
+export type SimliMode = "custom" | "sdk";
 
 export type AppView = "topic-select" | "getting-ready" | "lesson";
 
