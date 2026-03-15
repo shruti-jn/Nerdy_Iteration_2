@@ -86,7 +86,39 @@ pytest -v
 
 # Specific file
 pytest tests/test_server.py -v
+
+# Eval/benchmark artifact tests (no API keys)
+pytest tests/test_eval_artifacts.py -v
 ```
+
+### Evals and benchmarks (artifact generation)
+
+From `backend/` with virtualenv activated and API keys in `.env`:
+
+```bash
+# Socratic quality eval (requires GROQ_API_KEY) — writes evals/results/socratic_validation.json + socratic_validation_summary.md
+python -m evals.run_socratic_eval
+
+# Quick smoke: 5 turns per topic
+python -m evals.run_socratic_eval --turns 5
+
+# Single topic
+python -m evals.run_socratic_eval --topic photosynthesis
+
+# Legacy: run validate_socratic_prompt directly (same artifacts + --turns N)
+python -m evals.validate_socratic_prompt --turns 10
+
+# Provider validation + pipeline latency benchmark — writes benchmarks/results/benchmark_report.json + benchmark_summary.md
+python -m benchmarks.run_benchmarks
+
+# Providers only (no pipeline benchmark)
+python -m benchmarks.run_benchmarks --providers-only
+
+# Pipeline latency only (e.g. 5 runs)
+python -m benchmarks.run_benchmarks --pipeline-only --runs 5
+```
+
+Artifacts: `backend/evals/results/`, `backend/benchmarks/results/`. Exit code 1 on failure for CI.
 
 | Test file | What it covers |
 |---|---|
@@ -99,6 +131,7 @@ pytest tests/test_server.py -v
 | [tests/test_llm_engine.py](backend/tests/test_llm_engine.py) | Groq LLM streaming |
 | [tests/test_stt_adapter.py](backend/tests/test_stt_adapter.py) | Deepgram STT |
 | [tests/test_tts_adapter.py](backend/tests/test_tts_adapter.py) | TTS adapter (Deepgram / ElevenLabs) |
+| [tests/test_eval_artifacts.py](backend/tests/test_eval_artifacts.py) | Eval/benchmark artifact schema, percentile, pass/fail logic |
 
 ### Frontend
 ```bash
@@ -228,5 +261,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Avatar connection stability (double-WS fix) | ✅ Done | `serverUrlRef` prevents `connect` identity change; `simliConnectingRef` guards against redundant Simli handshakes |
 | Vite proxy IPv4 fix | ✅ Done | Proxy targets use `127.0.0.1` instead of `localhost` to avoid Docker IPv6 port conflict |
 | Langfuse LLM observability | ✅ Done | Traces every Groq call (stream + quick_call) with input/output/usage/timing; graceful no-op when keys missing |
+| Eval/benchmark artifact generation | ✅ Done | run_socratic_eval + run_benchmarks produce JSON + markdown; p50/p95 stats; CI exit codes; test_eval_artifacts.py |
 | Fly.io deployment infra | ✅ Done | Multi-stage Dockerfile, fly.toml, .dockerignore, static file serving from FastAPI |
-| Production deployment (Fly.io) | 🚧 In progress | Infra ready; pending `fly deploy` with secrets |
+| Production deployment (Fly.io) | ✅ Done | Live at https://nerdy-tutor.fly.dev; auto-stop/start; health check at /health |
+| CI/CD pipeline (GitHub Actions) | ✅ Done | Push to main → pytest + npm test → deploy to Fly.io; concurrency-controlled |

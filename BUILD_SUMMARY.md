@@ -881,3 +881,34 @@ Decisions:
 - **Langfuse v4 SDK pattern**: Used `start_as_current_observation()` context managers + `update_current_generation()` — the v4 API replaced v2's `trace()`/`generation()` methods with OpenTelemetry-based context propagation.
 
 Refs: `backend/observability/langfuse_setup.py:1-82`, `backend/adapters/llm_engine.py:24,107-151`, `backend/pipeline/orchestrator_custom.py:1-15,55-70,120-140`, `backend/config.py:40-42`, `backend/main.py:32-33,53-61,319-322`, `Dockerfile:1-36`, `fly.toml:1-32`, `.dockerignore:1-47`, `frontend/src/App.tsx:62,230-240`
+
+---
+
+## 2026-03-15 — Phase 4: Eval and benchmark artifact generation
+
+What: Implemented reproducible eval and benchmark artifact generation: hardened validate_socratic_prompt (CI exit code, markdown summary, per-turn llm_latency_ms, p50/p95, --turns, Teacher Mode awareness); added topic scenario banks (eval_photosynthesis.py, eval_newtons_laws.py, evals/scenario.py); implemented run_socratic_eval.py (--topic, --turns, optional Braintrust logging); implemented run_benchmarks.py (provider validation + e2e pipeline benchmark, p50/p95/p99, benchmark_report.json + benchmark_summary.md, --runs/--providers-only/--pipeline-only); added tests/test_eval_artifacts.py (17 tests, mock-based); removed dead Logfire code (logfire_setup.py, validate_logfire, logfire from requirements); validate_providers skips Braintrust when key unset.
+
+Why: Plan Phase 4 required one-command artifact generation for submission evidence, both educational (Socratic scores) and systems (latency) quality, with CI-friendly exit codes and no reliance on anecdotes.
+
+How: validate_socratic_prompt: added argparse --turns, TurnResult.llm_latency_ms, _percentile(), write_markdown_summary(), Teacher Mode via consecutive struggle detection and teacher_mode in turn_dict, sys.exit(1) on FAIL. run_socratic_eval: CLI --topic/--turns, calls run_conversation per topic, writes same JSON + markdown, optional BraintrustLogger when BRAINTRUST_API_KEY set. run_benchmarks: runs validate_providers (minus Logfire), runs _run_pipeline_benchmark (CustomOrchestrator.handle_turn with test audio), aggregates p50/p95/p99, writes report + summary, exit 1 on budget fail. test_eval_artifacts: _percentile, print_report verdict, write_markdown_summary output, JSON schema, benchmark _write_benchmark_report/_write_benchmark_summary. Removed logfire_setup.py; validate_braintrust skips when key empty; run_benchmarks no longer calls validate_logfire. Python 3.9 compatibility: Optional[int] and List/Optional in type hints where needed.
+
+Decisions: Teacher Mode detection via 3 consecutive "struggle" phrases (idk, just tell me, etc.) so no_direct_answer scorer does not false-fail. Eval scenario banks (EvalScenario) in separate topic modules and shared evals/scenario.py for reuse. Pipeline benchmark uses real CustomOrchestrator + test audio chunks; single turn per run, N runs for percentiles. Logfire removed entirely per plan recommendation (Langfuse is the tracing story).
+
+Refs: backend/evals/validate_socratic_prompt.py, backend/evals/run_socratic_eval.py, backend/evals/eval_photosynthesis.py, backend/evals/eval_newtons_laws.py, backend/evals/scenario.py, backend/benchmarks/run_benchmarks.py, backend/benchmarks/validate_providers.py, backend/tests/test_eval_artifacts.py, RUNBOOK.md §3 and §6
+
+---
+
+## 2026-03-15 — CI/CD pipeline + production deployment to Fly.io
+
+What: Created GitHub Actions CI/CD pipeline that runs backend (pytest) and frontend (npm test) on every push to main, then deploys to Fly.io via remote Docker build. Created Fly.io app `nerdy-tutor`, imported all backend secrets, and deployed successfully. App is live at https://nerdy-tutor.fly.dev.
+
+Why: The user requested cloud deployment accessible via public URL with CI/CD triggered by git push — no manual deploys, no self-hosting.
+
+How: Created `.github/workflows/deploy.yml` with two jobs: `test` (Python 3.11 + Node 18, runs pytest + npm test) and `deploy` (uses `superfly/flyctl-actions`, runs `flyctl deploy --remote-only`). Pipeline uses `concurrency` groups to cancel in-flight deploys when new commits land. Created Fly.io app via `flyctl apps create`, imported backend `.env` as Fly secrets via `flyctl secrets import`, generated a deploy token via `flyctl tokens create deploy`, and set it as `FLY_API_TOKEN` GitHub secret via `gh secret set`. First deploy completed in 2m35s. Verified app loads correctly in browser at https://nerdy-tutor.fly.dev — topic selection grid renders, health endpoint returns 200.
+
+Decisions:
+- **Single workflow (test → deploy) vs. separate workflows**: Chose single workflow with `needs: test` dependency. Pros: simpler to maintain, atomic deploy-or-not decision. Cons: can't re-run deploy without re-running tests. Alternative was separate workflows with workflow_run trigger, which adds complexity.
+- **Remote Docker build (`--remote-only`) vs. local build + registry push**: Chose remote build on Fly's builders. Pros: no need for Docker registry secrets, simpler workflow, Fly handles layer caching. Cons: slightly slower than pre-built images. Alternative was GitHub Container Registry + `flyctl deploy --image`.
+- **Concurrency group with cancel-in-progress**: Ensures rapid pushes don't queue stale deploys. Only the latest commit deploys.
+
+Refs: `.github/workflows/deploy.yml:1-59`, `fly.toml:1-32`, `Dockerfile:1-36`
