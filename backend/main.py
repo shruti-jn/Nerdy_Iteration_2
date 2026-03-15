@@ -183,7 +183,14 @@ async def session_handler(ws: WebSocket):
     # Allow URL param ?avatar=spatialreal to override the env default
     avatar_param = ws.query_params.get("avatar", "").lower()
     avatar_provider = avatar_param if avatar_param in ("simli", "spatialreal") else settings.avatar_provider
-    orchestrator = CustomOrchestrator(settings, session_id, send, max_turns=MAX_TURNS, braintrust_logger=_braintrust)
+    orchestrator = CustomOrchestrator(
+        settings,
+        session_id,
+        send,
+        max_turns=MAX_TURNS,
+        braintrust_logger=_braintrust,
+        avatar_provider=avatar_provider,
+    )
     simli: SimliAvatarAdapter | None = None
     turn_queue: asyncio.Queue | None = None
     turn_task: asyncio.Task | None = None

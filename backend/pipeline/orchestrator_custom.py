@@ -50,12 +50,13 @@ class CustomOrchestrator:
         send_json: Callable[[dict], Awaitable[None]],
         max_turns: int | None = None,
         braintrust_logger=None,
+        avatar_provider: str | None = None,
     ) -> None:
         self._settings = settings
         self._session_id = session_id
         self._send_json = send_json
         self._max_turns = max_turns if max_turns is not None else _default_max_turns()
-        self._avatar_provider: str = getattr(settings, "avatar_provider", "simli")
+        self._avatar_provider: str = avatar_provider or getattr(settings, "avatar_provider", "simli")
         self._stt = DeepgramSTTAdapter(settings)
         self._llm = GroqLLMEngine(settings)
         self._tts = (
@@ -300,7 +301,6 @@ class CustomOrchestrator:
         sentence_buffer = SentenceBuffer()
         full_text = ""
         sentence_idx = 0
-        avatar_started = False
 
         async for sentence in sentence_buffer.process(token_stream):
             sentence_idx += 1
@@ -315,23 +315,10 @@ class CustomOrchestrator:
                 if sent_first_byte_ns is None:
                     sent_first_byte_ns = time.monotonic_ns()
                 b64 = base64.b64encode(audio_chunk).decode("ascii")
+                # The browser owns Simli lip-sync by forwarding these chunks over
+                # the active WebRTC DataChannel. Keeping a single audio path avoids
+                # backend/frontend drift when one transport dies mid-session.
                 await self._send_json({"type": "audio_chunk", "data": b64})
-                # Forward audio to Simli for lip-sync (only when using Simli provider).
-                # In SpatialReal SDK Mode the frontend forwards audio directly.
-                if self._simli is not None and self._avatar_provider == "simli":
-                    try:
-                        if not avatar_started:
-                            mc.start("avatar")
-                            avatar_started = True
-                        await self._simli.send_audio(audio_chunk)
-                        mc.mark_first("avatar")
-                    except Exception as exc:
-                        logger.warning(
-                            "simli_audio_forward_failed session_id=%s %s error=%s",
-                            self._session_id,
-                            label,
-                            exc,
-                        )
 
             sent_tts_end = time.monotonic_ns()
             sent_ttfa = (
@@ -349,9 +336,6 @@ class CustomOrchestrator:
                 sentence[:60],
             )
 
-        if self._simli is not None and self._avatar_provider == "simli" and avatar_started:
-            mc.end("avatar")
-
         result = full_text.strip()
         finish_gen(output=result)
         return result
@@ -363,7 +347,6 @@ class CustomOrchestrator:
         label: str,
     ) -> None:
         """Stream a prebuilt text response through TTS and avatar channels."""
-        avatar_started = False
         sent_tts_start = time.monotonic_ns()
         sent_first_byte_ns = None
 
@@ -371,21 +354,9 @@ class CustomOrchestrator:
             if sent_first_byte_ns is None:
                 sent_first_byte_ns = time.monotonic_ns()
             b64 = base64.b64encode(audio_chunk).decode("ascii")
+            # Welcome-back and other prebuilt tutor audio use the same frontend-
+            # owned Simli path as normal turns.
             await self._send_json({"type": "audio_chunk", "data": b64})
-            if self._simli is not None and self._avatar_provider == "simli":
-                try:
-                    if not avatar_started:
-                        mc.start("avatar")
-                        avatar_started = True
-                    await self._simli.send_audio(audio_chunk)
-                    mc.mark_first("avatar")
-                except Exception as exc:
-                    logger.warning(
-                        "simli_audio_forward_failed session_id=%s %s error=%s",
-                        self._session_id,
-                        label,
-                        exc,
-                    )
 
         sent_tts_end = time.monotonic_ns()
         sent_ttfa = (
@@ -401,9 +372,6 @@ class CustomOrchestrator:
             len(text),
             text[:60],
         )
-
-        if self._simli is not None and self._avatar_provider == "simli" and avatar_started:
-            mc.end("avatar")
 
     async def handle_interrupt(self, session: SessionManager) -> None:
         """Handle barge-in: cancel STT/LLM/TTS and stop avatar."""

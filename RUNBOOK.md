@@ -209,8 +209,8 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Latency trend history (UI) | ✅ Done | Click latency panel to open trend chart |
 | TTS: Cartesia Sonic-3 | ✅ Done | `CartesiaTTSAdapter` with `sonic-3`; select via `TTS_PROVIDER=cartesia` in `.env` |
 | Simli avatar WebRTC signaling (C1) | ✅ Done | `connect()` does token→ICE→WS→SDP exchange; `simli_sdp_offer` handler wired; handles legacy "START" + new JSON protocol |
-| Simli TTS audio forwarding (C2) | ✅ Done | `send_audio()` forwards each TTS chunk to Simli WS for lip-sync; keepalive prevents idle timeout |
-| Simli keepalive (idle timeout fix) | ✅ Done | Background asyncio task sends 320-byte silent PCM every 3s between turns to prevent Simli closing the WS |
+| Simli TTS audio forwarding (C2) | ✅ Done | Frontend `audio_chunk` playback path is the single authoritative Simli lip-sync feed via WebRTC DataChannel; duplicate backend forwarding removed from tutor playback |
+| Simli keepalive (idle timeout fix) | ✅ Done | Frontend DataChannel keepalive remains the live lip-sync guard between turns; backend Simli WS no longer controls tutor playback continuity |
 | Simli DataChannel keepalive (frontend) | ✅ Done | Frontend sends 320-byte silent PCM every 3s on the WebRTC DataChannel to prevent Simli closing it between turns |
 | Frontend log timestamps | ✅ Done | `[HH:MM:SS.mmm]` prefix on all `[TutorSocket]` and `[SimliWebRTC]` console logs |
 | Avatar connecting shimmer + slow fallback | ✅ Done | Shimmer on load → "almost ready" at 8s → error state on failure → retry button → auto-recovers on stream |

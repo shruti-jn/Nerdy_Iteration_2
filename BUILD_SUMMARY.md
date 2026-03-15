@@ -1141,3 +1141,19 @@ Decisions:
 - Chose the spoken alias `Socrates Six` instead of `Socrates 6`. Alternative considered: passing the numeral `6` directly to TTS. Spelling it out is more deterministic across voice providers.
 
 Refs: `backend/adapters/tts_adapter.py:35-37,77-92,160-186`, `backend/tests/test_tts_adapter.py:20,162-212`, `backend/tests/test_tts_adapter_cartesia.py:192-229`, `RUNBOOK.md:253-255`
+
+---
+
+## 2026-03-15 15:12
+
+What: Removed duplicate backend Simli tutor-audio forwarding from `backend/pipeline/orchestrator_custom.py`, passed the session-selected avatar provider into `CustomOrchestrator` from `backend/main.py`, added regression coverage in `backend/tests/test_orchestrator_custom.py` and `backend/tests/test_server.py`, expanded `backend/tests/conftest.py` for orchestrator construction, and updated the Simli status rows in `RUNBOOK.md`.
+
+Why: Simli lip sync was failing after the first prompt because tutor audio was being driven through two competing paths. Runtime logs showed the backend Simli relay dying and later turns hitting `Simli send_audio: not ready ... audio will be dropped until reconnect`, so the safest fix was to make the frontend WebRTC/DataChannel path the only live lip-sync feed.
+
+How: Stopped calling the backend Simli adapter from normal tutor and welcome-back TTS streaming, leaving `audio_chunk` messages as the single source of truth for frontend playback and Simli DataChannel forwarding; wired `avatar_provider` per session so the orchestrator no longer relies on the global default; added tests proving Simli tutor audio stays on the frontend path and that `/session?avatar=...` reaches the orchestrator correctly; ran `python3 -m pytest` in `backend` (`333 passed, 1 skipped, 7 deselected`) and `npm test` in `frontend` (`145 passed, 4 skipped`); manually verified in a live browser run that Simli still completed WebRTC handshake, delivered remote video/audio tracks, opened the DataChannel, and streamed greeting `audio_chunk`s to the frontend, while the prior backend `Simli send_audio: not ready ... dropped until reconnect` log signature did not reappear. The attempted live second-turn check was blocked by an external Cartesia `402 quota_exceeded` error before the tutor could complete another spoken response.
+
+Decisions:
+- Chose a single authoritative frontend Simli audio path instead of trying to auto-reconnect the backend relay after failure. Alternative considered: teaching `SimliAvatarAdapter.send_audio()` to recover mid-session. The single-path approach removed the proven failure point and avoided keeping browser lip sync dependent on a second transport that was already dying in production-like runs.
+- Passed `avatar_provider` explicitly from `main.py` into `CustomOrchestrator` instead of relying on `settings.avatar_provider`. Alternative considered: leave the global default and only fix the forwarding path. Explicit per-session wiring closes a correctness gap for any future Simli/SpatialReal branching and prevents mismatches when the query param overrides the environment.
+
+Refs: `backend/main.py:183-193`, `backend/pipeline/orchestrator_custom.py:46-65`, `backend/pipeline/orchestrator_custom.py:314-321`, `backend/pipeline/orchestrator_custom.py:353-359`, `backend/tests/test_orchestrator_custom.py:1-63`, `backend/tests/test_server.py:88-124`, `backend/tests/conftest.py:34-46`, `RUNBOOK.md:211-214`

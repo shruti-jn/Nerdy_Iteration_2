@@ -86,6 +86,45 @@ def test_ws_session_start():
 
 
 @pytest.mark.contract
+def test_ws_passes_query_avatar_provider_to_orchestrator():
+    """The orchestrator should receive the session-selected avatar provider."""
+    import main as main_module
+
+    captured: dict[str, str | None] = {"avatar_provider": None}
+
+    class FakeOrchestrator:
+        def __init__(self, settings, session_id, send_json, max_turns=None, braintrust_logger=None, avatar_provider=None):
+            del settings, session_id, send_json, max_turns, braintrust_logger
+            captured["avatar_provider"] = avatar_provider
+
+        def set_simli(self, adapter):
+            del adapter
+
+        async def handle_greeting(self, session, topic):
+            del session, topic
+
+        async def handle_welcome_back(self, session, topic):
+            del session, topic
+
+        async def handle_interrupt(self, session):
+            del session
+
+        async def cancel_active_turn(self):
+            return None
+
+        async def get_metrics(self):
+            return {}
+
+    with patch.object(main_module, "CustomOrchestrator", FakeOrchestrator):
+        client = TestClient(app)
+        with client.websocket_connect("/session?avatar=spatialreal") as ws:
+            msg = json.loads(ws.receive_text())
+            assert msg["type"] == "session_start"
+
+    assert captured["avatar_provider"] == "spatialreal"
+
+
+@pytest.mark.contract
 def test_ws_session_limit_rejection_contract():
     """Connection beyond MAX_SESSIONS returns SESSION_LIMIT_EXCEEDED and closes."""
     import main as main_module
