@@ -55,11 +55,14 @@ export interface SimliWebRTC {
 // Sent periodically to prevent Simli from closing the DataChannel due to inactivity.
 const SILENT_FRAME = new Uint8Array(320);
 const DC_KEEPALIVE_INTERVAL_MS = 3_000;
+const MAX_PENDING_AUDIO_CHUNKS = 64;
 
 export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const connectedRef = useRef(false);
+  const pendingAudioRef = useRef<Uint8Array[]>([]);
+  const pendingAudioWarnedRef = useRef(false);
 
   // ── Stabilize opts via ref so callbacks don't depend on object identity ──
   // Without this, disconnect/connect are recreated every render because opts
@@ -99,17 +102,54 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     const dc = dcRef.current;
     if (dc && dc.readyState === "open") {
       dcWarnedRef.current = false;
+      pendingAudioWarnedRef.current = false;
       // Cast required: RTCDataChannel.send() types buffer as ArrayBuffer (not SharedArrayBuffer),
       // but Uint8Array's .buffer is typed as ArrayBufferLike in newer TS lib.dom.d.ts.
       dc.send(data as unknown as Uint8Array<ArrayBuffer>);
-    } else if (!dcWarnedRef.current) {
-      console.warn(ts(), "[SimliWebRTC] sendAudio: DataChannel not open (state:", dc?.readyState ?? "null", ") — audio dropped");
+      return;
+    }
+
+    if (pcRef.current) {
+      const pending = pendingAudioRef.current;
+      pending.push(data.slice());
+      if (pending.length > MAX_PENDING_AUDIO_CHUNKS) {
+        pending.shift();
+        if (!pendingAudioWarnedRef.current) {
+          console.warn(ts(), "[SimliWebRTC] sendAudio: pending buffer full — dropping oldest lip-sync chunks");
+          pendingAudioWarnedRef.current = true;
+        }
+      }
+    }
+
+    if (!dcWarnedRef.current) {
+      console.warn(ts(), "[SimliWebRTC] sendAudio: DataChannel not open (state:", dc?.readyState ?? "null", ") — buffering lip-sync audio");
       dcWarnedRef.current = true;
     }
   }, []);
 
+  const flushPendingAudio = useCallback(() => {
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== "open") {
+      return;
+    }
+    const pending = pendingAudioRef.current;
+    if (pending.length === 0) {
+      return;
+    }
+
+    console.log(ts(), `[SimliWebRTC] Flushing ${pending.length} buffered lip-sync chunk(s)`);
+    for (const chunk of pending) {
+      dc.send(chunk as unknown as Uint8Array<ArrayBuffer>);
+    }
+    pending.length = 0;
+    dcWarnedRef.current = false;
+    pendingAudioWarnedRef.current = false;
+  }, []);
+
   const disconnect = useCallback(() => {
     stopKeepalive();
+    pendingAudioRef.current = [];
+    pendingAudioWarnedRef.current = false;
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.close();
@@ -134,6 +174,8 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     if (pcRef.current) {
       console.log(ts(), "[SimliWebRTC] Cleaning up stale PeerConnection before reconnect");
       stopKeepalive();
+      pendingAudioRef.current = [];
+      pendingAudioWarnedRef.current = false;
       dcRef.current?.close();
       dcRef.current = null;
       pcRef.current.close();
@@ -161,6 +203,7 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
       console.log(ts(), "[SimliWebRTC] DataChannel open — ready to send audio");
       dcWarnedRef.current = false;
       startKeepalive();
+      flushPendingAudio();
     };
     dc.onclose = () => {
       console.warn(ts(), "[SimliWebRTC] DataChannel closed — lip-sync audio will be dropped until reconnect");
@@ -254,7 +297,7 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     );
     console.log(ts(), "[SimliWebRTC] SDP offer sent to server");
     return true;
-  }, [disconnect, stopKeepalive, startKeepalive]);
+  }, [disconnect, stopKeepalive, startKeepalive, flushPendingAudio]);
 
   // Only clean up on unmount — disconnect is now stable (no deps on opts)
   // so this effect won't re-run on re-renders.

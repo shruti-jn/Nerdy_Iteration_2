@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { App } from "./App";
 import { LatencyPanel } from "./components/LatencyPanel";
@@ -163,6 +163,14 @@ describe("T4-06: ConversationHistory renders entries", () => {
 describe("T4-06B: GettingReadyView resume actions", () => {
   const noop = () => {};
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("shows both Start Lesson and Continue Lesson when a session can be resumed", () => {
     render(
       <GettingReadyView
@@ -197,6 +205,35 @@ describe("T4-06B: GettingReadyView resume actions", () => {
 
     expect(screen.getByRole("button", { name: "Start Lesson" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue Lesson" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Start Lesson and Continue Lesson disabled until the avatar is live", () => {
+    render(
+      <GettingReadyView
+        topic="Photosynthesis"
+        avatarState="connecting"
+        wsConnected={true}
+        canContinue={true}
+        videoRef={{ current: null }}
+        onBack={noop}
+        onStart={noop}
+        onContinue={noop}
+      />
+    );
+
+    const startBtn = screen.getByRole("button", { name: "Start Lesson" });
+    const continueBtn = screen.getByRole("button", { name: "Continue Lesson" });
+
+    expect(startBtn).toBeDisabled();
+    expect(continueBtn).toBeDisabled();
+
+    hookAct(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(screen.getByRole("button", { name: "Start without avatar" })).toBeInTheDocument();
+    expect(startBtn).toBeDisabled();
+    expect(continueBtn).toBeDisabled();
   });
 });
 

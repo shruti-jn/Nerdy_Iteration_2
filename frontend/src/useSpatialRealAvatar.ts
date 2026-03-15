@@ -50,6 +50,9 @@ export interface SpatialRealAvatar extends SpatialRealAvatarState {
    */
   start: () => Promise<void>;
 
+  /** Move the existing render canvas into a new container after a view swap. */
+  attach: (container: HTMLElement) => void;
+
   /**
    * Forward a TTS audio chunk to SpatialReal for lip-sync.
    * @param pcmBytes Raw PCM Int16 16 kHz mono audio
@@ -72,10 +75,32 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
 
   // Hold SDK objects in refs to avoid re-renders
   const avatarViewRef = useRef<unknown>(null);
+  // Persistent host element passed to AvatarView. The SDK attaches its canvas
+  // and ResizeObserver to this node, so we move the host between slots instead
+  // of re-parenting the canvas directly.
+  const containerRef = useRef<HTMLElement | null>(null);
   const controllerRef = useRef<unknown>(null);
   const initializedRef = useRef(false);
   // True after controller.start() resolves — audio can only be sent after this
   const startedRef = useRef(false);
+
+  const mountContainer = useCallback((slot: HTMLElement): HTMLElement => {
+    let host = containerRef.current;
+    if (!host) {
+      host = document.createElement("div");
+      host.style.width = "100%";
+      host.style.height = "100%";
+      host.style.display = "flex";
+      host.style.justifyContent = "center";
+      host.style.alignItems = "center";
+      host.style.position = "relative";
+      containerRef.current = host;
+    }
+    if (host.parentElement !== slot) {
+      slot.appendChild(host);
+    }
+    return host;
+  }, []);
 
   const initialize = useCallback(
     async (
@@ -130,8 +155,40 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
           );
         });
 
-        // 4. Create AvatarView (renders canvas inside container)
-        const view = new AvatarView(avatar, container);
+        const host = mountContainer(container);
+
+        const measuredWidth = host.clientWidth || container.clientWidth;
+        const measuredHeight = host.clientHeight || container.clientHeight;
+
+        // 4. Wait for the host container to have non-zero dimensions (layout must
+        //    complete before WebGPU can create a swapchain).
+        if (measuredWidth === 0 || measuredHeight === 0) {
+          console.debug(ts(), "[SpatialReal] Container has zero dimensions, waiting for layout...");
+          await new Promise<void>((resolve) => {
+            const ro = new ResizeObserver((entries) => {
+              for (const entry of entries) {
+                if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+                  ro.disconnect();
+                  clearTimeout(timeout);
+                  resolve();
+                  return;
+                }
+              }
+            });
+            // Safety timeout: if layout never fires within 3 s, proceed anyway
+            // (better to attempt creation than hang forever).
+            const timeout = setTimeout(() => {
+              ro.disconnect();
+              console.warn(ts(), "[SpatialReal] Container dimension wait timed out — proceeding");
+              resolve();
+            }, 3000);
+            ro.observe(host);
+          });
+          console.debug(ts(), "[SpatialReal] Container laid out:", host.clientWidth || container.clientWidth, "x", host.clientHeight || container.clientHeight);
+        }
+
+        // 5. Create AvatarView (renders canvas inside container)
+        const view = new AvatarView(avatar, host);
         avatarViewRef.current = view;
 
         const ctrl = view.controller;
@@ -155,9 +212,7 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
             error ?? "",
           );
           setConnectionState(state);
-          if (state === "connected") {
-            setIsConnected(true);
-          } else if (state === "disconnected" || state === "failed") {
+          if (state === "disconnected" || state === "failed") {
             setIsConnected(false);
           }
         };
@@ -174,7 +229,7 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
         throw err;
       }
     },
-    [],
+    [mountContainer],
   );
 
   const start = useCallback(async () => {
@@ -200,6 +255,19 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
     } catch (err) {
       console.error(ts(), "[SpatialReal] start() failed:", err);
     }
+  }, []);
+
+  const attach = useCallback((container: HTMLElement) => {
+    const host = containerRef.current;
+    if (!host) {
+      console.debug(ts(), "[SpatialReal] attach() skipped — no host yet");
+      return;
+    }
+    if (host.parentElement === container) {
+      return;
+    }
+    container.appendChild(host);
+    console.debug(ts(), "[SpatialReal] Host attached to new container");
   }, []);
 
   const sendAudio = useCallback(
@@ -247,6 +315,11 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
     }
     controllerRef.current = null;
     avatarViewRef.current = null;
+    const host = containerRef.current;
+    if (host?.parentElement) {
+      host.parentElement.removeChild(host);
+    }
+    containerRef.current = null;
     initializedRef.current = false;
     startedRef.current = false;
     setIsConnected(false);
@@ -265,6 +338,7 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
     connectionState,
     initialize,
     start,
+    attach,
     sendAudio,
     interrupt,
     dispose,

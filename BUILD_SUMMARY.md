@@ -1157,3 +1157,63 @@ Decisions:
 - Passed `avatar_provider` explicitly from `main.py` into `CustomOrchestrator` instead of relying on `settings.avatar_provider`. Alternative considered: leave the global default and only fix the forwarding path. Explicit per-session wiring closes a correctness gap for any future Simli/SpatialReal branching and prevents mismatches when the query param overrides the environment.
 
 Refs: `backend/main.py:183-193`, `backend/pipeline/orchestrator_custom.py:46-65`, `backend/pipeline/orchestrator_custom.py:314-321`, `backend/pipeline/orchestrator_custom.py:353-359`, `backend/tests/test_orchestrator_custom.py:1-63`, `backend/tests/test_server.py:88-124`, `backend/tests/conftest.py:34-46`, `RUNBOOK.md:211-214`
+
+---
+
+## 2026-03-15 15:49
+
+What: Added `CONCEPT_MAP_INCREMENTAL_REVEAL_PLAN.md`, an agent-ready implementation plan for replacing the current concept card with a backend-driven incremental reveal scene, and prioritized the backend progression/rescue work that should happen before UI polish.
+
+Why: The user wanted a concrete plan an implementation agent could execute, and the audited codebase needs the plan to fit the existing server-owned lesson progress model instead of introducing a larger graph system first.
+
+How: Wrote a root-level plan document with phased delivery, file touchpoints, acceptance criteria, test coverage, out-of-scope items, and explicit implementation decisions such as avoiding ReactFlow for MVP and using layered SVG/HTML scenes driven by existing `lesson_visual_update` state.
+
+---
+
+## 2026-03-15 16:03
+
+What: Performed a debug-only investigation of the Spatial Real path and identified three current regressions: duplicate tutor audio playback, canvas reattachment breaking Spatial Real resizing/rendering, and Spatial Real conversation rounds never being marked complete.
+
+Why: The Spatial Real experience is showing deadline-critical symptoms in the browser: two overlapping voices, an avatar that degrades or renders unclearly, and an avatar that does not return to live idle/thinking behavior.
+
+How: Traced the live frontend/backend message flow, inspected the local Spatial Real SDK package contract, correlated it with the browser console warnings and backend session logs for session `e4461a1a-40a1-4689-b50f-7471ad3a00ba`, and ran the focused frontend tests (`src/useSpatialRealAvatar.test.ts`, `src/App.avatar-lifecycle.test.tsx`) to confirm the current suite does not model the SDK resize/conversation-state behavior that is failing in the browser.
+
+---
+
+## 2026-03-15 16:05
+
+What: Changed restored-session `Start Lesson` to restart the lesson in place without reconnecting Simli or SpatialReal, and added regressions for the restored-start path in both frontend and backend tests.
+
+Why: The browser bug was still present because clicking `Start Lesson` from a restored session was tearing down lesson state and forcing a reconnect, which dropped the already-live avatar during the transition into the lesson view.
+
+How: Updated `frontend/src/App.tsx` to keep the active avatar transport alive while only resetting lesson content, updated `backend/main.py` so `start_lesson` on a restored session clears prior session state on the same websocket before sending the greeting, and added/adjusted tests in `frontend/src/App.avatar-lifecycle.test.tsx` and `backend/tests/test_server.py`.
+
+---
+
+## 2026-03-15 16:07
+
+What: Delayed Simli `start_lesson`/`continue_lesson` until the lesson-view video element is mounted and reattached to the live stream, and added a regression proving greeting dispatch waits for that handoff.
+
+Why: The avatar could remain visible after `Start Lesson` but miss its initial lip-sync animation because the greeting audio started before the lesson-view Simli video had actually mounted and taken over the live stream.
+
+How: Added a ref-driven wait in `frontend/src/App.tsx` that resolves only when the new lesson video element exists with the saved Simli `MediaStream` attached, and strengthened `frontend/src/App.avatar-lifecycle.test.tsx` to assert `sendStartLesson()` is not dispatched until that attachment has happened.
+
+---
+
+## 2026-03-15 16:10
+
+What: Added deterministic stuck-student scaffolding on the backend and replaced the concept card with layered incremental-reveal topic scenes on the frontend.
+
+Why: The tutoring flow needed safer rescue behavior for repeated "I don't know" turns, and the concept map needed a kid-friendly reveal model that unlocks understanding step by step instead of dumping the whole picture at once.
+
+How: Extended lesson progress/session state with failed-attempt tracking, tightened mastery thresholds and turn hints in the backend prompts/orchestrator, introduced scene definitions plus layered reveal rendering in `frontend/src/conceptScenes.ts` and `frontend/src/components/ConceptCanvas.tsx`, updated `TeachingPanel`, and added backend/frontend regressions with passing pytest, Vitest, and `tsc` verification.
+
+---
+
+## 2026-03-15 16:12
+
+What: Fixed the Spatial Real frontend path so tutor audio is no longer played twice, the avatar host survives the getting-ready to lesson transition without breaking SDK resizing, and each Spatial Real response is explicitly closed at the end of playback.
+
+Why: Spatial Real was exhibiting three deadline-critical regressions in the browser: overlapping duplicate voices, blurry/invalid avatar rendering after the lesson view transition, and an avatar that never returned cleanly to idle/thinking behavior.
+
+How: Updated `frontend/src/useTutorSocket.ts` to support provider-aware local playback suppression plus an end-of-audio callback, updated `frontend/src/App.tsx` to disable browser playback in Spatial Real mode and send a final `end=true` marker to the SDK, refactored `frontend/src/useSpatialRealAvatar.ts` to move a persistent SDK host container instead of reparenting the canvas, added regression coverage in `frontend/src/useTutorSocket.test.ts` and `frontend/src/App.avatar-lifecycle.test.tsx`, and verified with `npm run typecheck` plus `npm test` in `frontend` (`162 passed, 4 skipped`).

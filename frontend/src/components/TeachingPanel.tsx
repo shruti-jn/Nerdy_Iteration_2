@@ -46,6 +46,8 @@ export function TeachingPanel({ mode, streamingWords, visual }: Props) {
             isRecap={visual.isRecap}
           />
           <ConceptCanvas
+            diagramId={visual.diagramId}
+            stepId={visual.stepId}
             emojiDiagram={visual.emojiDiagram}
             caption={visual.caption}
             isRecap={visual.isRecap}

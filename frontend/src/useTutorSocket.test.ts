@@ -71,6 +71,8 @@ function makeStore(overrides?: Partial<SessionStore>): SessionStore {
     history: [],
     streamingWords: [],
     error: null,
+    visual: null,
+    setVisual: vi.fn(),
     setView: vi.fn(),
     setTopic: vi.fn(),
     setMode: vi.fn(),
@@ -206,7 +208,18 @@ describe("useTutorSocket", () => {
       expect(store.setError).toHaveBeenCalled();
     });
 
-    it("only restores when saved topic and avatar still match", async () => {
+    it("restores only when session_id is present in the URL", async () => {
+      localStorage.setItem("tutorSessionAvatar", "simli");
+      window.history.replaceState({}, "", "/?session_id=url-session");
+
+      const store = makeStore({ topicId: "photosynthesis" as const });
+      renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
+
+      await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&session_id=url-session&avatar=simli");
+    });
+
+    it("does not restore from localStorage when the URL has no session_id", async () => {
       localStorage.setItem("tutorSessionId", "saved-session");
       localStorage.setItem("tutorSessionTopicId", "photosynthesis");
       localStorage.setItem("tutorSessionAvatar", "simli");
@@ -215,14 +228,12 @@ describe("useTutorSocket", () => {
       renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
 
       await vi.waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
-      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&session_id=saved-session&avatar=simli");
+      expect(MockWebSocket.instances[0]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli");
     });
 
     it("does not restore when the avatar provider changes", async () => {
-      localStorage.setItem("tutorSessionId", "saved-session");
-      localStorage.setItem("tutorSessionTopicId", "photosynthesis");
       localStorage.setItem("tutorSessionAvatar", "simli");
-      window.history.replaceState({}, "", "/?avatar=spatialreal");
+      window.history.replaceState({}, "", "/?session_id=saved-session&avatar=spatialreal");
 
       const store = makeStore({ topicId: "photosynthesis" as const });
       renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session", topicId: "photosynthesis" }));
@@ -322,6 +333,7 @@ describe("useTutorSocket", () => {
       expect(store.setMode).toHaveBeenCalledWith("idle");
       expect(onSessionStart).toHaveBeenCalledWith("start");
       expect(result.current.sessionKind).toBe("start");
+      expect(new URLSearchParams(window.location.search).get("session_id")).toBe("abc-123");
     });
 
     it("session_restore restores history and marks the session as resumable", async () => {
@@ -350,12 +362,12 @@ describe("useTutorSocket", () => {
       expect(store.restoreSession).toHaveBeenCalled();
       expect(onSessionStart).toHaveBeenCalledWith("restore");
       expect(result.current.sessionKind).toBe("restore");
+      expect(new URLSearchParams(window.location.search).get("session_id")).toBe("resume-123");
     });
 
     it("reconnect with freshSession clears persisted session before reconnecting", async () => {
-      localStorage.setItem("tutorSessionId", "saved-session");
-      localStorage.setItem("tutorSessionTopicId", "photosynthesis");
       localStorage.setItem("tutorSessionAvatar", "simli");
+      window.history.replaceState({}, "", "/?session_id=saved-session");
 
       const store = makeStore({ topicId: "photosynthesis" as const });
       const { result } = renderHook(() =>
@@ -372,6 +384,7 @@ describe("useTutorSocket", () => {
       expect(localStorage.getItem("tutorSessionId")).toBeNull();
       expect(localStorage.getItem("tutorSessionTopicId")).toBeNull();
       expect(localStorage.getItem("tutorSessionAvatar")).toBeNull();
+      expect(new URLSearchParams(window.location.search).get("session_id")).toBeNull();
       expect(MockWebSocket.instances[1]?.url).toBe("ws://test/session?topic=photosynthesis&avatar=simli");
     });
 
@@ -405,6 +418,28 @@ describe("useTutorSocket", () => {
       expect(onAudioChunk).toHaveBeenCalledTimes(1);
       const arg = onAudioChunk.mock.calls[0][0] as Uint8Array;
       expect(Array.from(arg)).toEqual([0, 1, 2, 3]);
+    });
+
+    it("audio_chunk can suppress browser playback while still forwarding decoded PCM", async () => {
+      const store = makeStore();
+      const onAudioChunk = vi.fn();
+      renderHook(() =>
+        useTutorSocket({
+          store,
+          serverUrl: "ws://test/session",
+          onAudioChunk,
+          shouldPlayAudioChunk: () => false,
+        })
+      );
+      await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+      const ws = MockWebSocket.instances[0];
+
+      act(() => {
+        ws._receiveMessage({ type: "audio_chunk", data: "AAECAw==" });
+      });
+
+      expect(onAudioChunk).toHaveBeenCalledTimes(1);
+      expect(globalThis.AudioContext).not.toHaveBeenCalled();
     });
 
     it("student_partial calls store.updateLastStudentUtterance", async () => {
@@ -456,6 +491,158 @@ describe("useTutorSocket", () => {
       expect(store.bargeIn).toHaveBeenCalled();
     });
 
+    it("stages visual updates until the matching tutor response is committed", async () => {
+      vi.useFakeTimers();
+      try {
+        const store = makeStore({ turnNumber: 0, totalTurns: 15 });
+        renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session" }));
+        await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+        const ws = MockWebSocket.instances[0];
+
+        act(() => {
+          ws._receiveMessage({
+            type: "tutor_text_chunk",
+            text: "Think about the air.",
+            timing: {
+              turn_number: 1,
+              total_turns: 15,
+              stt_finish_ms: 100,
+              llm_duration_ms: 200,
+              tts_duration_ms: 150,
+              turn_duration_ms: 450,
+            },
+          });
+          ws._receiveMessage({
+            type: "lesson_visual_update",
+            diagram_id: "photosynthesis",
+            step_id: 1,
+            step_label: "The Ingredients",
+            total_steps: 7,
+            highlight_keys: ["sunlight"],
+            caption: "Plants need ingredients",
+            emoji_diagram: "☀️ + 💧 + CO2",
+            turn_number: 1,
+            is_recap: false,
+          });
+        });
+
+        expect(store.setVisual).not.toHaveBeenCalled();
+        expect(store.setTurnInfo).not.toHaveBeenCalledWith(1, 15);
+        expect(store.commitTutorResponse).not.toHaveBeenCalled();
+
+        act(() => {
+          vi.advanceTimersByTime(400);
+        });
+
+        expect(store.setTurnInfo).toHaveBeenCalledWith(1, 15);
+        expect(store.commitTutorResponse).toHaveBeenCalledTimes(1);
+        expect(store.setVisual).toHaveBeenCalledWith({
+          diagramId: "photosynthesis",
+          stepId: 1,
+          stepLabel: "The Ingredients",
+          totalSteps: 7,
+          highlightKeys: ["sunlight"],
+          caption: "Plants need ingredients",
+          emojiDiagram: "☀️ + 💧 + CO2",
+          turnNumber: 1,
+          isRecap: false,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stages session completion until the tutor response commit finishes", async () => {
+      vi.useFakeTimers();
+      try {
+        const store = makeStore({ turnNumber: 0, totalTurns: 15 });
+        renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session" }));
+        await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+        const ws = MockWebSocket.instances[0];
+
+        act(() => {
+          ws._receiveMessage({
+            type: "tutor_text_chunk",
+            text: "Great work.",
+            timing: {
+              turn_number: 1,
+              total_turns: 1,
+              stt_finish_ms: 80,
+              llm_duration_ms: 120,
+              tts_duration_ms: 90,
+              turn_duration_ms: 320,
+            },
+          });
+          ws._receiveMessage({
+            type: "session_complete",
+            turn_number: 1,
+            total_turns: 1,
+            message: "Great job!",
+          });
+        });
+
+        expect(store.setSessionComplete).not.toHaveBeenCalled();
+
+        act(() => {
+          vi.advanceTimersByTime(400);
+        });
+
+        expect(store.commitTutorResponse).toHaveBeenCalledTimes(1);
+        expect(store.setSessionComplete).toHaveBeenCalledWith(true);
+        expect(store.setTurnInfo).toHaveBeenCalledWith(1, 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("ignores stale visual updates from older turns", async () => {
+      const store = makeStore();
+      renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session" }));
+      await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+      const ws = MockWebSocket.instances[0];
+
+      act(() => {
+        ws._receiveMessage({
+          type: "session_restore",
+          session_id: "resume-123",
+          topic: "photosynthesis",
+          turn_count: 2,
+          total_turns: 15,
+          avatar_provider: "simli",
+          history: [],
+        });
+        ws._receiveMessage({
+          type: "lesson_visual_update",
+          diagram_id: "photosynthesis",
+          step_id: 2,
+          step_label: "The Green Kitchen",
+          total_steps: 7,
+          highlight_keys: ["chloroplast"],
+          caption: "Leaf kitchen",
+          emoji_diagram: "🌿 -> 🏭",
+          turn_number: 2,
+          is_recap: false,
+        });
+        ws._receiveMessage({
+          type: "lesson_visual_update",
+          diagram_id: "photosynthesis",
+          step_id: 0,
+          step_label: "The Hook",
+          total_steps: 7,
+          highlight_keys: ["seed"],
+          caption: "Old state",
+          emoji_diagram: "🌱 -> ?",
+          turn_number: 1,
+          is_recap: false,
+        });
+      });
+
+      expect(store.setVisual).toHaveBeenCalledTimes(1);
+      expect(store.setVisual).toHaveBeenLastCalledWith(
+        expect.objectContaining({ stepId: 2, turnNumber: 2 }),
+      );
+    });
+
     it("tutor_text_chunk with timing calls setStageLatency and pushLatencyHistory", async () => {
       const store = makeStore();
       renderHook(() => useTutorSocket({ store, serverUrl: "ws://test/session" }));
@@ -484,6 +671,31 @@ describe("useTutorSocket", () => {
       expect(store.pushLatencyHistory).toHaveBeenCalledWith(
         expect.objectContaining({ stt_ms: 120, llm_ms: 180, tts_ms: 95, total_ms: 650 })
       );
+    });
+
+    it("tutor_text_chunk notifies when the streamed tutor audio round is complete", async () => {
+      const store = makeStore();
+      const onAudioStreamComplete = vi.fn();
+      renderHook(() =>
+        useTutorSocket({ store, serverUrl: "ws://test/session", onAudioStreamComplete })
+      );
+      await vi.waitFor(() => expect(MockWebSocket.instances[0]?.readyState).toBe(1));
+      const ws = MockWebSocket.instances[0];
+
+      act(() => {
+        ws._receiveMessage({
+          type: "tutor_text_chunk",
+          text: "Great question!",
+          timing: {
+            stt_finish_ms: 120,
+            llm_duration_ms: 180,
+            tts_duration_ms: 95,
+            turn_duration_ms: 650,
+          },
+        });
+      });
+
+      expect(onAudioStreamComplete).toHaveBeenCalledTimes(1);
     });
 
     it("tutor_text_chunk with null timing values still calls setStageLatency", async () => {

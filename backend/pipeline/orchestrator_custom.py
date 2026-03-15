@@ -20,19 +20,92 @@ from adapters.stt_adapter import DeepgramSTTAdapter
 from adapters.tts_adapter import CartesiaTTSAdapter, DeepgramTTSAdapter
 from observability.langfuse_setup import trace_generation, trace_span
 from pipeline.errors import TutorError
+from pipeline.lesson_progress import LessonProgressState, evaluate_lesson_progress
 from pipeline.metrics import MetricsCollector
 from pipeline.orchestrator_protocol import Orchestrator
 from pipeline.sentence_buffer import SentenceBuffer
 from pipeline.session_manager import SessionManager
 from pipeline.vad_handler import VADHandler
 from prompts import build_greeting_prompt
-from prompts.visuals import parse_step_tag, get_visual_for_step, get_recap_visual, visual_to_message
+from prompts.visuals import (
+    get_recap_visual,
+    get_total_steps,
+    get_visual_for_step,
+    parse_step_tag,
+    visual_to_message,
+)
 
 logger = logging.getLogger("tutor")
 
 
 def _default_max_turns() -> int:
     return 15
+
+
+def _can_teach_back(progress: LessonProgressState, total_steps: int) -> bool:
+    if total_steps <= 0:
+        return False
+    return progress.current_step_id >= total_steps - 1
+
+
+def _build_turn_hint(
+    turn_number: int,
+    max_turns: int,
+    progress: LessonProgressState,
+    total_steps: int,
+) -> str:
+    """Build the runtime hint injected ahead of the student transcript."""
+    turn_hint = f"[Turn {turn_number} of {max_turns}]"
+
+    if turn_number == max_turns:
+        return (
+            f"{turn_hint} This is the FINAL turn. Summarize what the student learned. "
+            "Celebrate their progress. End with encouragement, not a question."
+        )
+
+    if progress.current_scaffold_level == 1:
+        turn_hint += (
+            " [RUNTIME STATE: SAME CONCEPT, SCAFFOLD LEVEL 1, FAILED ATTEMPTS=1] "
+            "The student is not there yet. Give one short conceptual clue, celebrate the effort, "
+            "and ask one narrow follow-up question. Do not advance the concept map."
+        )
+    elif progress.current_scaffold_level == 2:
+        turn_hint += (
+            " [RUNTIME STATE: SAME CONCEPT, SCAFFOLD LEVEL 2, FAILED ATTEMPTS=2] "
+            "The student is still stuck on this concept. Use one vivid real-world analogy from a kid's world, "
+            "keep it short, and ask one narrow follow-up question. Do not advance the concept map."
+        )
+    elif progress.current_scaffold_level == 3:
+        turn_hint += (
+            " [RUNTIME STATE: SAME CONCEPT, SCAFFOLD LEVEL 3, FAILED ATTEMPTS=3] "
+            "The student is stuck. Use a multiple-choice rescue with exactly three options labeled A, B, and C. "
+            "Make one answer clearly correct and ask them to choose. Do not advance the concept map."
+        )
+    elif progress.current_scaffold_level >= 4:
+        turn_hint += (
+            f" [RUNTIME STATE: SAME CONCEPT, SCAFFOLD LEVEL 4, FAILED ATTEMPTS={progress.failed_attempts_on_current_step}] "
+            "The student is deeply stuck on this same concept. Enter Teacher Mode: say "
+            "\"Let's pause the guessing game and look at the map,\" explain the concept clearly in 2-3 vivid sentences, "
+            "then ask a simple check-for-understanding question. Do not advance the concept map."
+        )
+
+    if _can_teach_back(progress, total_steps):
+        if turn_number >= max_turns - 2:
+            turn_hint += (
+                " [TEACH-BACK PHASE] Time to check deep understanding. "
+                "Ask the student to explain the concept in their own words. "
+                "Use one of these: 'Explain this to a 2nd grader in 30 seconds' "
+                "or 'Imagine you're a leaf — write your to-do list for the day.'"
+            )
+        elif turn_number >= max_turns - 4:
+            turn_hint += " Approaching the end — start wrapping up the key concept."
+    elif turn_number >= max_turns - 2:
+        turn_hint += (
+            " The student has not finished the concept map yet. Stay on the current concept, simplify, "
+            "and do not force a recap or teach-back."
+        )
+
+    return turn_hint
 
 
 class CustomOrchestrator:
@@ -68,7 +141,7 @@ class CustomOrchestrator:
         self._vad = VADHandler()
         self._last_metrics: dict = {}
         self._topic: str = ""
-        self._last_step_id: int = 0
+        self._lesson_progress: LessonProgressState | None = None
 
         # Register cancel callbacks for interrupt (barge-in)
         self._vad.register_cancel_callback("llm", self._llm.cancel)
@@ -92,6 +165,8 @@ class CustomOrchestrator:
         session: SessionManager,
     ) -> None:
         """Execute a full conversational turn: STT → LLM → TTS → Avatar."""
+        if not self._topic and session.lesson_progress:
+            self._topic = str(session.lesson_progress.get("topic", ""))
         turn_number = session.turn_count + 1
         logger.debug("handle_turn_start session_id=%s turn=%d simli=%s", self._session_id, turn_number, self._simli is not None)
 
@@ -165,21 +240,10 @@ class CustomOrchestrator:
 
         try:
             context = session.get_context()
-            turn_hint = f"[Turn {turn_number} of {self._max_turns}]"
-            if turn_number == self._max_turns:
-                turn_hint += (
-                    " This is the FINAL turn. Summarize what the student learned. "
-                    "Celebrate their progress. End with encouragement, not a question."
-                )
-            elif turn_number >= self._max_turns - 2:
-                turn_hint += (
-                    " [TEACH-BACK PHASE] Time to check deep understanding. "
-                    "Ask the student to explain the concept in their own words. "
-                    "Use one of these: 'Explain this to a 2nd grader in 30 seconds' "
-                    "or 'Imagine you're a leaf — write your to-do list for the day.'"
-                )
-            elif turn_number >= self._max_turns - 4:
-                turn_hint += " Approaching the end — start wrapping up the key concept."
+            progress = self._ensure_lesson_progress(session)
+            previous_visual_step = progress.visual_step_id
+            total_steps = get_total_steps(self._topic)
+            turn_hint = _build_turn_hint(turn_number, self._max_turns, progress, total_steps)
 
             full_text = await self._stream_llm_response(
                 f"{turn_hint} {transcript}",
@@ -190,11 +254,24 @@ class CustomOrchestrator:
 
             # Parse step tag from LLM output and strip before sending to frontend
             step_id, clean_text = parse_step_tag(full_text) if full_text else (None, full_text)
-            if step_id is None:
-                step_id_to_use = self._last_step_id
-            else:
-                step_id_to_use = step_id
-                self._last_step_id = step_id
+            progress = evaluate_lesson_progress(
+                self._topic,
+                transcript,
+                step_id,
+                progress,
+                total_steps,
+            )
+            self._lesson_progress = progress
+            session.lesson_progress = progress.to_dict()
+            logger.info(
+                "lesson_progress_update session_id=%s topic=%s current_step=%d visual_step=%d hinted_step=%s advanced=%s",
+                self._session_id,
+                self._topic,
+                progress.current_step_id,
+                progress.visual_step_id,
+                step_id,
+                progress.visual_step_id > previous_visual_step,
+            )
 
             if clean_text:
                 session.append_turn(transcript, clean_text)
@@ -210,8 +287,8 @@ class CustomOrchestrator:
 
             await self._send_json({"type": "tutor_text_chunk", "text": clean_text, "timing": timing})
 
-            # Send visual update for the current curriculum step
-            visual = get_visual_for_step(self._topic, step_id_to_use)
+            # The frontend map follows server-owned lesson progress, not raw LLM hints.
+            visual = get_visual_for_step(self._topic, progress.visual_step_id)
             if visual:
                 await self._send_json(visual_to_message(visual, self._topic, session.turn_count))
 
@@ -220,7 +297,7 @@ class CustomOrchestrator:
                 self._session_id,
                 session.turn_count,
                 self._max_turns,
-                step_id_to_use,
+                progress.visual_step_id,
                 (clean_text or "")[:80],
                 timing,
             )
@@ -413,6 +490,8 @@ class CustomOrchestrator:
         """Generate and stream the tutor greeting (Turn 0). Does not count toward max_turns."""
         logger.debug("handle_greeting_start session_id=%s topic=%s simli=%s", self._session_id, topic, self._simli is not None)
         self._topic = topic
+        self._lesson_progress = LessonProgressState(topic=topic, current_step_id=0, visual_step_id=0)
+        session.lesson_progress = self._lesson_progress.to_dict()
 
         # Langfuse: trace the greeting as a top-level span
         finish_trace = trace_span(
@@ -457,7 +536,6 @@ class CustomOrchestrator:
             visual = get_visual_for_step(topic, 0)
             if visual:
                 await self._send_json(visual_to_message(visual, topic, 0))
-            self._last_step_id = 0
 
             await self._send_json({"type": "greeting_complete"})
             logger.info(
@@ -480,6 +558,7 @@ class CustomOrchestrator:
     async def handle_welcome_back(self, session: SessionManager, topic: str) -> None:
         """Speak a short resume prompt after a restored session reconnects."""
         self._topic = topic
+        self._ensure_lesson_progress(session)
 
         last_prompt = next(
             (
@@ -539,3 +618,22 @@ class CustomOrchestrator:
             })
         finally:
             finish_trace()
+
+    def _ensure_lesson_progress(self, session: SessionManager) -> LessonProgressState:
+        topic = self._topic
+        if not topic:
+            topic = session.lesson_progress.get("topic") if session.lesson_progress else ""
+        if self._lesson_progress is not None and self._lesson_progress.topic == topic:
+            return self._lesson_progress
+
+        progress = LessonProgressState.from_dict(session.lesson_progress, topic)
+        total_steps = get_total_steps(topic)
+        if total_steps > 0:
+            progress.current_step_id = min(progress.current_step_id, total_steps - 1)
+            progress.visual_step_id = min(progress.visual_step_id, total_steps - 1)
+        else:
+            progress.current_step_id = 0
+            progress.visual_step_id = 0
+        self._lesson_progress = progress
+        session.lesson_progress = progress.to_dict()
+        return progress

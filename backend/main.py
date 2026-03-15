@@ -41,6 +41,14 @@ from prompts.visuals import get_visual_for_step, get_total_steps, visual_to_mess
 from observability.braintrust_logger import BraintrustLogger
 
 logger = logging.getLogger("tutor")
+_DEBUG_LOG_PATH = "/Users/shruti/Software/Nerdy_Iteration_2/.cursor/debug-7e57ee.log"
+
+def _append_debug_log(payload: dict) -> None:
+    try:
+        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as debug_file:
+            debug_file.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
 
 class _ISOJsonFormatter(JsonFormatter):
     """JSON formatter with proper ISO-8601 timestamps including milliseconds."""
@@ -177,6 +185,23 @@ async def session_handler(ws: WebSocket):
         session_id = str(uuid.uuid4())
         session_mgr = SessionManager(system_prompt, llm_engine)
 
+    # region agent log
+    _append_debug_log({
+        "sessionId": "7e57ee",
+        "runId": "pre-fix",
+        "hypothesisId": "H8",
+        "location": "backend/main.py:186",
+        "message": "backend_session_source_selected",
+        "data": {
+            "query_session_id": client_session_id,
+            "restored": restored,
+            "resolved_session_id": session_id,
+            "topic": topic,
+        },
+        "timestamp": int(datetime.now(tz=timezone.utc).timestamp() * 1000),
+    })
+    # endregion
+
     active_sessions.add(session_id)
     logger.info("Session started", extra={"event": "session_start", "session_id": session_id, "topic": topic, "restored": restored})
     send = lambda data: _send_json(ws, data)
@@ -194,7 +219,7 @@ async def session_handler(ws: WebSocket):
     simli: SimliAvatarAdapter | None = None
     turn_queue: asyncio.Queue | None = None
     turn_task: asyncio.Task | None = None
-    greeting_sent = restored  # skip greeting on restore — it was already sent
+    greeting_sent = False  # set True after start_lesson or continue_lesson
 
     try:
         if restored:
@@ -211,8 +236,13 @@ async def session_handler(ws: WebSocket):
                     for msg in session_mgr.history
                 ],
             })
-            # Send visual for the approximate current step (Phase 1.5)
-            restore_step = min(session_mgr.turn_count, get_total_steps(topic) - 1)
+            # Restore the last server-owned concept-map step when available.
+            saved_progress = session_mgr.lesson_progress if isinstance(session_mgr.lesson_progress, dict) else None
+            restore_step = None
+            if saved_progress and saved_progress.get("topic") == topic:
+                restore_step = int(saved_progress.get("visual_step_id", 0))
+            if restore_step is None:
+                restore_step = min(session_mgr.turn_count, get_total_steps(topic) - 1)
             restore_step = max(0, restore_step)  # clamp to 0 if no steps
             restore_visual = get_visual_for_step(topic, restore_step)
             if restore_visual:
@@ -231,8 +261,9 @@ async def session_handler(ws: WebSocket):
                 except Exception as exc:
                     logger.error("spatialreal_init_failed session_id=%s error=%s", session_id, exc, exc_info=True)
                     await _send_json(ws, {"type": "error", "code": "SPATIALREAL_INIT_FAILED", "message": str(exc)})
-            if any(msg.get("role") == "assistant" and msg.get("content", "").strip() for msg in session_mgr.history):
-                await orchestrator.handle_welcome_back(session_mgr, topic)
+            # Welcome-back is deferred until the frontend explicitly chooses
+            # Continue. If the user picks Start Lesson instead, we now restart
+            # the lesson in place on this same websocket/avatar connection.
         else:
             await _send_json(ws, {"type": "session_start", "session_id": session_id, "topic": topic, "total_turns": MAX_TURNS, "avatar_provider": avatar_provider})
 
@@ -281,9 +312,38 @@ async def session_handler(ws: WebSocket):
                         logger.debug("duplicate_start_lesson session_id=%s — ignored", session_id)
                         continue
                     greeting_sent = True
+                    if restored:
+                        logger.info("start_lesson_reset_restored_session session_id=%s topic=%s", session_id, topic)
+                        session_mgr = SessionManager(system_prompt, llm_engine)
+                        restored = False
                     logger.info("start_lesson session_id=%s topic=%s", session_id, topic)
                     await orchestrator.handle_greeting(session_mgr, topic)
                     # Persist after greeting so restore can skip it
+                    await session_store.save(session_id, session_mgr.to_dict(), topic)
+                elif msg_type == "continue_lesson":
+                    if greeting_sent:
+                        logger.debug("duplicate_continue_lesson session_id=%s — ignored", session_id)
+                        continue
+                    greeting_sent = True
+                    logger.info("continue_lesson session_id=%s topic=%s", session_id, topic)
+                    if any(m.get("role") == "assistant" and m.get("content", "").strip() for m in session_mgr.history):
+                        # region agent log
+                        _append_debug_log({
+                            "sessionId": "7e57ee",
+                            "runId": "post-fix",
+                            "hypothesisId": "H1",
+                            "location": "backend/main.py:325",
+                            "message": "backend_welcome_back_sent_after_continue",
+                            "data": {
+                                "session_id": session_id,
+                                "turn_count": session_mgr.turn_count,
+                                "history_count": len(session_mgr.history),
+                                "avatar_provider": avatar_provider,
+                            },
+                            "timestamp": int(datetime.now(tz=timezone.utc).timestamp() * 1000),
+                        })
+                        # endregion
+                        await orchestrator.handle_welcome_back(session_mgr, topic)
                     await session_store.save(session_id, session_mgr.to_dict(), topic)
                 elif msg_type == "end_of_utterance":
                     logger.info("end_of_utterance session_id=%s turn_task_active=%s", session_id, turn_task is not None)

@@ -7,8 +7,8 @@
  * - ConceptCanvas component rendering (emoji diagram, caption, recap checkmark)
  * - TeachingPanel composite component (title switching, backward compat, live badge, waveform)
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, it, expect, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
 import { renderHook, act } from "@testing-library/react";
 import { useSessionStore } from "./useSessionStore";
 import { TeachingPanel } from "./components/TeachingPanel";
@@ -184,21 +184,26 @@ describe("StepProgress", () => {
 // ── 3. ConceptCanvas component tests ────────────────────────────────────────
 
 describe("ConceptCanvas", () => {
-  it("renders emoji diagram", () => {
+  it("renders a layered scene when the topic is known", () => {
     render(
       <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={MOCK_VISUAL.caption}
         isRecap={false}
       />,
     );
 
-    expect(screen.getByText(MOCK_VISUAL.emojiDiagram)).toBeInTheDocument();
+    expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
+    expect(screen.getByText("Leaf lab")).toBeInTheDocument();
   });
 
   it("renders caption when provided", () => {
     render(
       <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption="Chloroplasts are tiny kitchens inside every leaf"
         isRecap={false}
@@ -212,15 +217,46 @@ describe("ConceptCanvas", () => {
 
   it("does not render caption when null", () => {
     const { container } = render(
-      <ConceptCanvas emojiDiagram={MOCK_VISUAL.emojiDiagram} caption={null} isRecap={false} />,
+      <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
+        emojiDiagram={MOCK_VISUAL.emojiDiagram}
+        caption={null}
+        isRecap={false}
+      />,
     );
 
     expect(container.querySelector(".concept-canvas__caption")).toBeNull();
   });
 
-  it("shows checkmark on recap", () => {
-    render(
+  it("marks past, current, and future layers with reveal statuses", () => {
+    const { container } = render(
       <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
+        emojiDiagram={MOCK_VISUAL.emojiDiagram}
+        caption={MOCK_VISUAL.caption}
+        isRecap={false}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-layer-id="seed-tree"]')?.getAttribute("data-layer-status"),
+    ).toBe("mastered");
+    expect(
+      container.querySelector('[data-layer-id="leaf-lab"]')?.getAttribute("data-layer-status"),
+    ).toBe("revealed");
+    expect(
+      container.querySelector('[data-layer-id="products"]')?.getAttribute("data-layer-status"),
+    ).toBe("hidden");
+    expect(screen.getAllByText("Locked").length).toBeGreaterThan(0);
+  });
+
+  it("shows checkmark on recap", () => {
+    const { container } = render(
+      <ConceptCanvas
+        diagramId={MOCK_RECAP_VISUAL.diagramId}
+        stepId={MOCK_RECAP_VISUAL.stepId}
         emojiDiagram={MOCK_RECAP_VISUAL.emojiDiagram}
         caption={MOCK_RECAP_VISUAL.caption}
         isRecap={true}
@@ -229,11 +265,15 @@ describe("ConceptCanvas", () => {
 
     expect(screen.getByLabelText("Complete")).toBeInTheDocument();
     expect(screen.getByText("✓")).toBeInTheDocument();
+    const layers = Array.from(container.querySelectorAll("[data-layer-status]"));
+    expect(layers.every((layer) => layer.getAttribute("data-layer-status") === "mastered")).toBe(true);
   });
 
   it("does not show checkmark when not recap", () => {
     render(
       <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={MOCK_VISUAL.stepId}
         emojiDiagram={MOCK_VISUAL.emojiDiagram}
         caption={MOCK_VISUAL.caption}
         isRecap={false}
@@ -242,6 +282,20 @@ describe("ConceptCanvas", () => {
 
     expect(screen.queryByLabelText("Complete")).not.toBeInTheDocument();
     expect(screen.queryByText("✓")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the raw emoji diagram for unknown topics", () => {
+    render(
+      <ConceptCanvas
+        diagramId="unknown-topic"
+        stepId={1}
+        emojiDiagram="⭐ → ❓"
+        caption="Fallback"
+        isRecap={false}
+      />,
+    );
+
+    expect(screen.getByText("⭐ → ❓")).toBeInTheDocument();
   });
 });
 
@@ -276,7 +330,8 @@ describe("TeachingPanel", () => {
     );
 
     // Visual content
-    expect(screen.getByText(MOCK_VISUAL.emojiDiagram)).toBeInTheDocument();
+    expect(screen.getByText("Greenhouse Map")).toBeInTheDocument();
+    expect(screen.getByText("Leaf lab")).toBeInTheDocument();
     // Tutor text
     expect(screen.getByText("hello")).toBeInTheDocument();
   });

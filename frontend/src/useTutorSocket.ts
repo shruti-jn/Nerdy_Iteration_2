@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from "react";
-import type { SessionStore, AvatarProvider } from "./types";
+import type { SessionStore, AvatarProvider, LessonVisualState } from "./types";
 
 /** Returns a compact timestamp prefix: [HH:MM:SS.mmm] */
 function ts(): string {
@@ -25,6 +25,10 @@ export interface TutorSocketOptions {
   onAvatarProvider?: (provider: AvatarProvider) => void;
   /** Called with raw PCM bytes for each audio_chunk — use to forward to Simli DataChannel */
   onAudioChunk?: (pcm: Uint8Array) => void;
+  /** Return false to suppress browser AudioContext playback for a given mode/provider. */
+  shouldPlayAudioChunk?: () => boolean;
+  /** Called after the backend has finished streaming audio for the current tutor response. */
+  onAudioStreamComplete?: () => void;
   /** Called when the backend reports a Simli avatar connection failure */
   onSimliError?: (message: string) => void;
   /** Called when the backend sends spatialreal_session_init with token and config */
@@ -43,6 +47,8 @@ export interface TutorSocket {
   sendEndOfUtterance(): void;
   /** Signal the backend to generate the greeting (Turn 0) */
   sendStartLesson(): void;
+  /** Signal the backend to resume a restored session (welcome-back prompt) */
+  sendContinueLesson(): void;
   sendBargeIn(): void;
   isConnected: boolean;
   sessionKind: "start" | "restore" | null;
@@ -75,10 +81,25 @@ function getRequestedAvatarProvider(): AvatarProvider {
   return avatarParam === "spatialreal" ? "spatialreal" : "simli";
 }
 
+function getSessionIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get("session_id");
+}
+
+function syncSessionIdInUrl(sessionId: string | null): void {
+  const url = new URL(window.location.href);
+  if (sessionId) {
+    url.searchParams.set("session_id", sessionId);
+  } else {
+    url.searchParams.delete("session_id");
+  }
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
 function clearPersistedSession(): void {
   localStorage.removeItem(SESSION_ID_KEY);
   localStorage.removeItem(SESSION_TOPIC_KEY);
   localStorage.removeItem(SESSION_AVATAR_KEY);
+  syncSessionIdInUrl(null);
 }
 
 /**
@@ -100,6 +121,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const reconnectAttemptRef = useRef(0);
   const manualDisconnectRef = useRef(false);
   const freshSessionRef = useRef(false);
+  const responseCommitTimerRef = useRef<number | null>(null);
+  const awaitingCommitTurnRef = useRef<number | null>(null);
+  const committedTurnRef = useRef(0);
+  const pendingVisualRef = useRef<LessonVisualState | null>(null);
+  const pendingCompletionRef = useRef<Extract<ServerMessage, { type: "session_complete" }> | null>(null);
+  const appliedVisualRef = useRef<{ turnNumber: number; isRecap: boolean }>({
+    turnNumber: -1,
+    isRecap: false,
+  });
 
   // ── Stabilize opts via ref so callbacks don't depend on object identity ──
   // Without this, handleMessage/connect are recreated every render because
@@ -112,19 +142,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const buildServerUrl = useCallback(() => {
     const params = new URLSearchParams();
     if (opts.topicId) params.set("topic", opts.topicId);
-    const savedSessionId = localStorage.getItem(SESSION_ID_KEY);
-    const savedTopicId = localStorage.getItem(SESSION_TOPIC_KEY);
+    const urlSessionId = getSessionIdFromUrl();
     const savedAvatar = localStorage.getItem(SESSION_AVATAR_KEY);
     const requestedAvatar = getRequestedAvatarProvider();
     if (
       !freshSessionRef.current &&
-      savedSessionId &&
-      savedTopicId &&
-      opts.topicId &&
-      savedTopicId === opts.topicId &&
-      savedAvatar === requestedAvatar
+      urlSessionId &&
+      (savedAvatar === null || savedAvatar === requestedAvatar)
     ) {
-      params.set("session_id", savedSessionId);
+      params.set("session_id", urlSessionId);
     }
     if (requestedAvatar) params.set("avatar", requestedAvatar);
     const qs = params.toString() ? `?${params.toString()}` : "";
@@ -146,6 +172,8 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   // Audio playback — play each chunk immediately as it arrives (no buffering)
   const audioCtxRef = useRef<AudioContext | null>(null);
   const playbackQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // Generation counter: incremented on disconnect to cancel queued audio chunks.
+  const audioGenRef = useRef(0);
   // Track time-to-first-audio on the frontend (mic release → first audio byte played)
   const firstAudioPlayedRef = useRef<boolean>(false);
 
@@ -171,7 +199,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     const isFirst = !firstAudioPlayedRef.current;
     if (isFirst) firstAudioPlayedRef.current = true;
 
+    const gen = audioGenRef.current;
     playbackQueueRef.current = playbackQueueRef.current.then(async () => {
+      // Stale audio from a previous connection — skip silently.
+      if (audioGenRef.current !== gen) return;
       try {
         let audioBuffer: AudioBuffer;
 
@@ -207,18 +238,67 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     });
   }
 
-  /** Decode a base64-encoded audio chunk and play it immediately. */
-  function playAudioChunk(base64Data: string): void {
+  function decodeAudioChunk(base64Data: string): Uint8Array {
     const binary = atob(base64Data);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    playChunkNow(bytes);
+    return bytes;
   }
 
   function clearReconnectTimer(): void {
     if (reconnectTimerRef.current !== null) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
+    }
+  }
+
+  function clearResponseCommitTimer(): void {
+    if (responseCommitTimerRef.current !== null) {
+      window.clearTimeout(responseCommitTimerRef.current);
+      responseCommitTimerRef.current = null;
+    }
+  }
+
+  function resetTurnSync(turnNumber: number): void {
+    clearResponseCommitTimer();
+    awaitingCommitTurnRef.current = null;
+    committedTurnRef.current = turnNumber;
+    pendingVisualRef.current = null;
+    pendingCompletionRef.current = null;
+    appliedVisualRef.current = { turnNumber: -1, isRecap: false };
+  }
+
+  function shouldApplyVisual(visual: LessonVisualState): boolean {
+    const applied = appliedVisualRef.current;
+    if (visual.turnNumber > applied.turnNumber) return true;
+    if (visual.turnNumber < applied.turnNumber) return false;
+    return visual.isRecap && !applied.isRecap;
+  }
+
+  function applyVisual(store: SessionStore, visual: LessonVisualState): void {
+    if (!shouldApplyVisual(visual)) return;
+    store.setVisual(visual);
+    appliedVisualRef.current = {
+      turnNumber: visual.turnNumber,
+      isRecap: visual.isRecap,
+    };
+  }
+
+  function flushDeferredTurnState(store: SessionStore): void {
+    const committedTurn = committedTurnRef.current;
+    const pendingVisual = pendingVisualRef.current;
+    if (pendingVisual && pendingVisual.turnNumber <= committedTurn) {
+      applyVisual(store, pendingVisual);
+      pendingVisualRef.current = null;
+    }
+
+    const pendingCompletion = pendingCompletionRef.current;
+    if (pendingCompletion && pendingCompletion.turn_number <= committedTurn) {
+      store.setTurnInfo(pendingCompletion.turn_number, pendingCompletion.total_turns);
+      store.setSessionComplete(true);
+      clearPersistedSession();
+      console.log(ts(), "[TutorSocket] Session complete:", pendingCompletion.message);
+      pendingCompletionRef.current = null;
     }
   }
 
@@ -238,10 +318,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         console.debug(ts(), "[TutorSocket] session_start received, session_id:", msg.session_id, "topic:", msg.topic, "avatar_provider:", msg.avatar_provider);
         const persistedAvatar = msg.avatar_provider ?? getRequestedAvatarProvider();
         freshSessionRef.current = false;
+        resetTurnSync(0);
         setSessionKind("start");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
         if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
+        syncSessionIdInUrl(msg.session_id);
+        // #region agent log
+        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:305",message:"session_start_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         store.setMode("idle");
         // Set initial turn info from server if provided
         if (msg.total_turns) {
@@ -254,12 +339,20 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         onSessionStart?.("start");
       } else if (msg.type === "session_restore") {
         console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count, "avatar_provider:", msg.avatar_provider);
+        // #region agent log
+        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H1",location:"frontend/src/useTutorSocket.ts:317",message:"session_restore_received",data:{view:store.view,turnCount:msg.turn_count ?? 0,historyCount:(msg.history ?? []).length,avatarProvider:msg.avatar_provider ?? null},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         const persistedAvatar = localStorage.getItem(SESSION_AVATAR_KEY) ?? msg.avatar_provider ?? getRequestedAvatarProvider();
         freshSessionRef.current = false;
+        resetTurnSync(msg.turn_count ?? 0);
         setSessionKind("restore");
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
         if (msg.topic) localStorage.setItem(SESSION_TOPIC_KEY, msg.topic);
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
+        syncSessionIdInUrl(msg.session_id);
+        // #region agent log
+        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:326",message:"session_restore_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         // Notify App which avatar provider is active
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
@@ -278,6 +371,14 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         );
         onSessionStart?.("restore");
       } else if (msg.type === "tutor_text_chunk") {
+        const turnNum =
+          (msg.timing?.["turn_number"] as number | null) ??
+          committedTurnRef.current;
+        const totalTurns =
+          (msg.timing?.["total_turns"] as number | null) ??
+          store.totalTurns;
+        awaitingCommitTurnRef.current = turnNum;
+
         // Extract per-stage timing if present.
         // Use TTF (time-to-first) metrics for STT/LLM/TTS — these reflect
         // perceived responsiveness, not total processing time.
@@ -289,11 +390,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
             total_ms: (msg.timing["turn_duration_ms"] as number | null) ?? null,
           };
           store.setStageLatency(entry);
-
-          // Use backend-provided turn number (source of truth)
-          const turnNum = (msg.timing["turn_number"] as number | null) ?? store.turnNumber;
-          const totalTurns = (msg.timing["total_turns"] as number | null) ?? store.totalTurns;
-          store.setTurnInfo(turnNum, totalTurns);
 
           // Don't push greeting latency into the turn history chart
           if (!msg.is_greeting) {
@@ -320,16 +416,28 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         }
         // Reset turn timer (frontend e2e was already recorded on first audio_chunk)
         turnStartRef.current = 0;
-        setTimeout(() => store.commitTutorResponse(), 400);
+        clearResponseCommitTimer();
+        responseCommitTimerRef.current = window.setTimeout(() => {
+          store.setTurnInfo(turnNum, totalTurns);
+          store.commitTutorResponse();
+          committedTurnRef.current = Math.max(committedTurnRef.current, turnNum);
+          awaitingCommitTurnRef.current = null;
+          responseCommitTimerRef.current = null;
+          flushDeferredTurnState(store);
+        }, 400);
+        optsRef.current.onAudioStreamComplete?.();
       } else if (msg.type === "audio_chunk") {
         // Play immediately — don't buffer until tutor_text_chunk
         console.debug(ts(), "[TutorSocket] audio_chunk received, base64 len:", msg.data.length);
-        playAudioChunk(msg.data);
+        // #region agent log
+        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H2",location:"frontend/src/useTutorSocket.ts:399",message:"audio_chunk_play_requested",data:{view:store.view,mode:store.mode,historyCount:store.history.length,msgLength:msg.data.length},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        const bytes = decodeAudioChunk(msg.data);
+        if (optsRef.current.shouldPlayAudioChunk?.() ?? true) {
+          playChunkNow(bytes);
+        }
         // Forward raw PCM to Simli DataChannel for avatar lip-sync
         if (onAudioChunk) {
-          const binary = atob(msg.data);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           onAudioChunk(bytes);
         }
       } else if (msg.type === "simli_sdp_answer") {
@@ -347,10 +455,17 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         // Live streaming partial transcript — update the placeholder in real time
         store.updateLastStudentUtterance(msg.text);
       } else if (msg.type === "session_complete") {
-        store.setTurnInfo(msg.turn_number, msg.total_turns);
-        store.setSessionComplete(true);
-        clearPersistedSession();
-        console.log(ts(), "[TutorSocket] Session complete:", msg.message);
+        if (
+          awaitingCommitTurnRef.current !== null &&
+          msg.turn_number >= awaitingCommitTurnRef.current
+        ) {
+          pendingCompletionRef.current = msg;
+        } else {
+          store.setTurnInfo(msg.turn_number, msg.total_turns);
+          store.setSessionComplete(true);
+          clearPersistedSession();
+          console.log(ts(), "[TutorSocket] Session complete:", msg.message);
+        }
       } else if (msg.type === "greeting_complete") {
         // Greeting audio is done — ensure mode returns to idle so mic enables
         store.setMode("idle");
@@ -358,6 +473,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       } else if (msg.type === "barge_in_ack") {
         // Cancel any queued audio playback by replacing the queue
         playbackQueueRef.current = Promise.resolve();
+        clearResponseCommitTimer();
+        awaitingCommitTurnRef.current = null;
+        pendingVisualRef.current = null;
+        pendingCompletionRef.current = null;
         store.bargeIn();
       } else if (msg.type === "error") {
         // Avatar-specific errors — surface via dedicated callback so the
@@ -408,7 +527,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           store.setMode("idle");
         }
       } else if (msg.type === "lesson_visual_update") {
-        store.setVisual({
+        const visualState = {
           diagramId: msg.diagram_id,
           stepId: msg.step_id,
           stepLabel: msg.step_label,
@@ -418,7 +537,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           emojiDiagram: msg.emoji_diagram,
           turnNumber: msg.turn_number,
           isRecap: msg.is_recap,
-        });
+        } satisfies LessonVisualState;
+        const waitingForSameTurnCommit =
+          awaitingCommitTurnRef.current !== null &&
+          visualState.turnNumber >= awaitingCommitTurnRef.current;
+        if (waitingForSameTurnCommit || visualState.turnNumber > committedTurnRef.current) {
+          pendingVisualRef.current = visualState;
+        } else {
+          applyVisual(store, visualState);
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,6 +574,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
     if (wsRef.current && connectedRef.current) return;
 
+    // #region agent log
+    fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H5",location:"frontend/src/useTutorSocket.ts:547",message:"ws_connect_url_built",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),storedTopicId:localStorage.getItem(SESSION_TOPIC_KEY),storedAvatar:localStorage.getItem(SESSION_AVATAR_KEY),wsUrl:serverUrlRef.current,topicId:optsRef.current.topicId ?? null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const ws = new WebSocket(serverUrlRef.current);
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
@@ -524,6 +654,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     wsRef.current = null;
     connectedRef.current = false;
     setIsConnectedState(false);
+    clearResponseCommitTimer();
+    // Cancel any queued audio chunks from the old connection.
+    audioGenRef.current += 1;
+    playbackQueueRef.current = Promise.resolve();
     try { audioCtxRef.current?.close(); } catch { /* may already be closed */ }
     audioCtxRef.current = null;
   }, []);
@@ -653,6 +787,21 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     wsRef.current.send(JSON.stringify({ type: "start_lesson" }));
   }, []);
 
+  const sendContinueLesson = useCallback(() => {
+    if (optsRef.current._useMock) {
+      // In mock mode, just transition to idle — no welcome-back simulation.
+      setTimeout(() => optsRef.current.store.setMode("idle"), 200);
+      return;
+    }
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.debug(ts(), "[TutorSocket] sendContinueLesson: WS not open, skipping");
+      return;
+    }
+    console.debug(ts(), "[TutorSocket] sendContinueLesson: sending continue_lesson");
+    firstAudioPlayedRef.current = false;
+    wsRef.current.send(JSON.stringify({ type: "continue_lesson" }));
+  }, []);
+
   const sendBargeIn = useCallback(() => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       optsRef.current.store.setError("Connection unavailable. Reconnecting...");
@@ -680,6 +829,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     sendAudioChunk,
     sendEndOfUtterance,
     sendStartLesson,
+    sendContinueLesson,
     sendBargeIn,
     isConnected: isConnectedState,
     sessionKind,

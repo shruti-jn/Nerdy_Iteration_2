@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { ConversationHistory } from "./components/ConversationHistory";
 import { AvatarFeed } from "./components/AvatarFeed";
-import { TutorResponse } from "./components/TutorResponse";
 import { TeachingPanel } from "./components/TeachingPanel";
 import { BottomBar } from "./components/BottomBar";
 import { TopicSelectView } from "./components/TopicSelectView";
@@ -51,12 +50,17 @@ export function App() {
   const avatarProviderRef = useRef<AvatarProvider>(initialProvider);
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   // Ref for the SpatialReal avatar <div> container (SDK creates <canvas> inside)
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   // Store the live MediaStream so it can be re-attached when the <video> element
   // changes across view transitions (GettingReady → Lesson unmounts/remounts the video).
   const streamRef = useRef<MediaStream | null>(null);
+  const lessonVideoWaitRef = useRef<{
+    previousVideo: HTMLVideoElement | null;
+    resolve: () => void;
+    timeoutId: number;
+  } | null>(null);
   // Store SpatialReal init data until the container element is mounted
   const srInitRef = useRef<{ appId: string; sessionToken: string; avatarId: string } | null>(null);
 
@@ -162,13 +166,7 @@ export function App() {
       srInitRef.current = { appId, sessionToken, avatarId };
       const container = containerRef.current;
       if (container) {
-        spatialReal.initialize(appId, sessionToken, avatarId, container).then(() => {
-          if (slowTimerRef.current) {
-            clearTimeout(slowTimerRef.current);
-            slowTimerRef.current = null;
-          }
-          setAvatarState("live");
-        }).catch((err) => {
+        spatialReal.initialize(appId, sessionToken, avatarId, container).catch((err) => {
           console.error("[App] SpatialReal initialize failed:", err);
           setAvatarState("error");
           store.setError("Avatar initialization failed.");
@@ -182,6 +180,12 @@ export function App() {
       } else {
         // Forward TTS audio to Simli via DataChannel for avatar lip-sync
         simliRtcRef.current?.sendAudio(pcm);
+      }
+    },
+    shouldPlayAudioChunk: () => avatarProviderRef.current !== "spatialreal",
+    onAudioStreamComplete: () => {
+      if (avatarProviderRef.current === "spatialreal") {
+        spatialReal.sendAudio(new ArrayBuffer(0), true);
       }
     },
     onSimliError: (message) => {
@@ -212,6 +216,9 @@ export function App() {
     if (!video) return;
 
     const markLive = () => {
+      // #region agent log
+      fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H4",location:"frontend/src/App.tsx:215",message:"avatar_video_confirmed_live",data:{view:store.view,avatarState,videoWidth:video.videoWidth,videoHeight:video.videoHeight},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       console.debug("[App] Avatar video confirmed live (%dx%d)", video.videoWidth, video.videoHeight);
       if (slowTimerRef.current) {
         clearTimeout(slowTimerRef.current);
@@ -255,7 +262,7 @@ export function App() {
         requestAnimationFrame(poll);
       }
     }
-  }, []);
+  }, [avatarState, store.view]);
 
   const simliRtc = useSimliWebRTC({
     getSignalingWs: () => socket.ws,
@@ -296,6 +303,83 @@ export function App() {
     simliRtcRef.current = simliRtc;
   }, [simliRtc]);
 
+  const attachSimliStream = useCallback((video: HTMLVideoElement | null) => {
+    if (!video) return;
+    const stream = streamRef.current;
+    if (!stream) return;
+    if (video.srcObject === stream) return;
+    console.debug("[App] Attaching saved Simli stream to mounted video element");
+    video.srcObject = stream;
+    video.play().catch((err) => {
+      if (err.name !== "AbortError") {
+        console.warn("[App] Video play() rejected on mount attach:", err);
+      }
+    });
+  }, []);
+
+  const resolveLessonVideoWait = useCallback((video: HTMLVideoElement | null) => {
+    const pendingWait = lessonVideoWaitRef.current;
+    const stream = streamRef.current;
+    if (!pendingWait || !video || !stream) {
+      return;
+    }
+    if (video === pendingWait.previousVideo) {
+      return;
+    }
+    if (video.srcObject !== stream) {
+      return;
+    }
+
+    window.clearTimeout(pendingWait.timeoutId);
+    lessonVideoWaitRef.current = null;
+    pendingWait.resolve();
+  }, []);
+
+  const setVideoElement = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    attachSimliStream(node);
+    resolveLessonVideoWait(node);
+  }, [attachSimliStream, resolveLessonVideoWait]);
+
+  const setSpatialContainer = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    if (node && avatarProviderRef.current === "spatialreal" && spatialReal.isConnected) {
+      spatialReal.attach(node);
+    }
+  }, [spatialReal]);
+
+  const waitForLessonAvatarMount = useCallback(async (previousVideo: HTMLVideoElement | null) => {
+    if (avatarProviderRef.current !== "simli") {
+      return;
+    }
+
+    const stream = streamRef.current;
+    if (!stream) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (video && video !== previousVideo && video.srcObject === stream) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        if (lessonVideoWaitRef.current?.timeoutId === timeoutId) {
+          lessonVideoWaitRef.current = null;
+        }
+        console.warn("[App] Lesson video did not reattach the Simli stream before greeting");
+        resolve();
+      }, 250);
+
+      lessonVideoWaitRef.current = {
+        previousVideo,
+        resolve: () => resolve(),
+        timeoutId,
+      };
+    });
+  }, []);
+
   // ── SpatialReal: initialize when container becomes available ──────────────
   // The container ref may not be mounted when spatialreal_session_init arrives
   // (because the GettingReadyView mounts it). This effect retries initialization
@@ -307,19 +391,23 @@ export function App() {
     if (!container) return;
     if (spatialReal.isConnected || spatialReal.isLoading) return;
     const { appId, sessionToken, avatarId } = srInitRef.current;
-    spatialReal.initialize(appId, sessionToken, avatarId, container).then(() => {
-      if (slowTimerRef.current) {
-        clearTimeout(slowTimerRef.current);
-        slowTimerRef.current = null;
-      }
-      setAvatarState("live");
-    }).catch((err) => {
+    spatialReal.initialize(appId, sessionToken, avatarId, container).catch((err) => {
       console.error("[App] SpatialReal deferred initialize failed:", err);
       setAvatarState("error");
       store.setError("Avatar initialization failed.");
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.view, avatarProvider]);
+
+  useEffect(() => {
+    if (avatarProvider !== "spatialreal") return;
+    if (!spatialReal.isConnected) return;
+    if (slowTimerRef.current) {
+      clearTimeout(slowTimerRef.current);
+      slowTimerRef.current = null;
+    }
+    setAvatarState("live");
+  }, [avatarProvider, spatialReal.isConnected]);
 
   // Re-attach the Simli MediaStream to the new <video> element after a view
   // transition (getting-ready → lesson). The old <video> is destroyed on
@@ -328,6 +416,14 @@ export function App() {
   // Uses rAF to ensure the DOM has painted and the ref is assigned.
   useEffect(() => {
     if (store.view !== "lesson") return;
+    if (avatarProviderRef.current === "spatialreal") {
+      const container = containerRef.current;
+      if (!container) {
+        return;
+      }
+      spatialReal.attach(container);
+      return;
+    }
     const stream = streamRef.current;
     if (!stream) {
       console.debug("[App] View→lesson but no stream saved — avatar may not be connected");
@@ -350,7 +446,7 @@ export function App() {
     attach();
     const rafId = requestAnimationFrame(attach);
     return () => cancelAnimationFrame(rafId);
-  }, [store.view]);
+  }, [spatialReal, store.view]);
 
   // ── View transition handlers ─────────────────────────────────────────────
 
@@ -376,10 +472,12 @@ export function App() {
 
   const startLessonFlow = useCallback(async (sendGreeting: boolean) => {
     console.debug("[App] handleStartLesson — avatarProvider:", avatarProvider, "stream saved:", !!streamRef.current, "avatarState:", avatarState);
+    const previousVideo = videoRef.current;
     store.setView("lesson");
     if (sendGreeting) {
       store.setMode("tutor-greeting");
     }
+    await waitForLessonAvatarMount(previousVideo);
     // SpatialReal: start() MUST complete before sendStartLesson so audio
     // chunks from the greeting don't arrive before the SDK is ready.
     // start() includes initializeAudioContext() which requires a user gesture,
@@ -393,24 +491,30 @@ export function App() {
     }
     if (sendGreeting) {
       socket.sendStartLesson();
+    } else {
+      // Restored session — ask backend to speak the welcome-back prompt.
+      socket.sendContinueLesson();
     }
-  }, [socket, store, avatarState, avatarProvider, spatialReal]);
+  }, [socket, store, avatarState, avatarProvider, spatialReal, waitForLessonAvatarMount]);
 
   const handleStartLesson = useCallback(async () => {
     if (socket.sessionKind === "restore") {
-      console.debug("[App] handleStartLesson — restarting with a fresh session");
-      pendingLessonActionRef.current = "fresh";
+      console.debug("[App] handleStartLesson — restarting restored lesson in place");
+      pendingLessonActionRef.current = null;
       store.reset();
-      socket.reconnect({ freshSession: true });
+      await startLessonFlow(true);
       return;
     }
     await startLessonFlow(true);
-  }, [socket, startLessonFlow, store]);
+  }, [socket.sessionKind, startLessonFlow, store]);
 
   const handleContinueLesson = useCallback(async () => {
+    // #region agent log
+    fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H3",location:"frontend/src/App.tsx:411",message:"continue_lesson_selected",data:{view:store.view,avatarState,sessionKind:socket.sessionKind,historyCount:store.history.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     pendingLessonActionRef.current = null;
     await startLessonFlow(false);
-  }, [startLessonFlow]);
+  }, [avatarState, socket.sessionKind, startLessonFlow, store.history.length, store.view]);
 
   // ── Mic handlers ───────────────────────────────────────────────────────────
 
@@ -521,9 +625,9 @@ export function App() {
         topic={store.topic}
         avatarState={avatarState}
         wsConnected={socket.isConnected}
-        videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+        videoRef={setVideoElement}
         avatarProvider={avatarProvider}
-        containerRef={containerRef as React.RefObject<HTMLDivElement>}
+        containerRef={setSpatialContainer}
         onBack={handleBack}
         onStart={handleStartLesson}
         onContinue={handleContinueLesson}
@@ -545,7 +649,7 @@ export function App() {
         </div>
 
         <div className="app__col app__col--center">
-          <AvatarFeed mode={store.mode} videoRef={videoRef} avatarState={avatarState} onRetry={handleAvatarRetry} avatarProvider={avatarProvider} containerRef={containerRef as React.RefObject<HTMLDivElement>} />
+          <AvatarFeed mode={store.mode} videoRef={setVideoElement} avatarState={avatarState} onRetry={handleAvatarRetry} avatarProvider={avatarProvider} containerRef={setSpatialContainer} />
         </div>
 
         <div className="app__col app__col--right">

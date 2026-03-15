@@ -171,6 +171,60 @@ def test_ws_barge_in():
 
 
 @pytest.mark.contract
+def test_ws_start_lesson_resets_restored_session_in_place():
+    """Starting over from a restored session should keep the same live connection and clear lesson state."""
+    import main as main_module
+
+    saved_session = {
+        "topic": "photosynthesis",
+        "history": [
+            {"role": "assistant", "content": "Old tutor question"},
+            {"role": "user", "content": "Old student answer"},
+        ],
+        "summary": "Old summary",
+        "turn_count": 4,
+        "lesson_progress": {
+            "topic": "photosynthesis",
+            "current_step_id": 2,
+            "visual_step_id": 2,
+        },
+        "turns_since_compression": 2,
+    }
+    observed: dict[str, object] = {}
+
+    async def fake_handle_greeting(self, session, topic):
+        observed["topic"] = topic
+        observed["turn_count"] = session.turn_count
+        observed["history"] = list(session.history)
+        observed["summary"] = session.summary
+        observed["lesson_progress"] = session.lesson_progress
+        await self._send_json({"type": "greeting_complete"})
+
+    with (
+        patch.object(main_module.session_store, "load", AsyncMock(return_value=saved_session)),
+        patch.object(main_module.session_store, "save", AsyncMock()),
+        patch("main.CustomOrchestrator.handle_greeting", new=fake_handle_greeting),
+    ):
+        client = TestClient(app)
+        with client.websocket_connect("/session?session_id=resume-123") as ws:
+            msg = json.loads(ws.receive_text())
+            assert msg["type"] == "session_restore"
+            ws.send_text(json.dumps({"type": "start_lesson"}))
+            for _ in range(4):
+                msg = json.loads(ws.receive_text())
+                if msg["type"] == "greeting_complete":
+                    break
+            else:
+                pytest.fail("Expected greeting_complete after start_lesson on a restored session")
+
+    assert observed["topic"] == "photosynthesis"
+    assert observed["turn_count"] == 0
+    assert observed["history"] == []
+    assert observed["summary"] == ""
+    assert observed["lesson_progress"] is None
+
+
+@pytest.mark.contract
 def test_ws_simli_not_configured():
     """simli_sdp_offer returns SIMLI_NOT_CONFIGURED when credentials are empty."""
     import main as main_module
@@ -720,10 +774,10 @@ def test_ws_duplicate_start_lesson_ignored(
 @patch("pipeline.orchestrator_custom.DeepgramTTSAdapter")
 @patch("pipeline.orchestrator_custom.GroqLLMEngine")
 @patch("pipeline.orchestrator_custom.DeepgramSTTAdapter")
-def test_ws_session_restore_sends_welcome_back(
+def test_ws_session_restore_waits_for_continue_before_welcome_back(
     mock_stt_cls, mock_llm_cls, mock_deepgram_tts_cls, mock_cartesia_tts_cls
 ):
-    """Restored sessions immediately send a welcome-back prompt and repeat the last tutor question."""
+    """Restored sessions defer the welcome-back prompt until continue_lesson."""
     import main as main_module
 
     mock_stt = MagicMock()
@@ -757,6 +811,11 @@ def test_ws_session_restore_sends_welcome_back(
         ],
         "summary": "",
         "turn_count": 2,
+        "lesson_progress": {
+            "topic": "photosynthesis",
+            "current_step_id": 1,
+            "visual_step_id": 1,
+        },
         "turns_since_compression": 0,
         "updated_at": time.time(),
     }
@@ -766,6 +825,13 @@ def test_ws_session_restore_sends_welcome_back(
         with client.websocket_connect("/session?topic=photosynthesis&session_id=resume-123") as ws:
             first = json.loads(ws.receive_text())
             assert first["type"] == "session_restore"
+
+            visual_msg = json.loads(ws.receive_text())
+            assert visual_msg["type"] == "lesson_visual_update"
+            assert visual_msg["step_id"] == 1
+            assert visual_msg["step_label"] == "The Ingredients"
+
+            ws.send_text(json.dumps({"type": "continue_lesson"}))
 
             messages = []
             for _ in range(30):

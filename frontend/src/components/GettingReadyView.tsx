@@ -8,11 +8,11 @@ interface Props {
   avatarState: AvatarConnectionState;
   wsConnected: boolean;
   canContinue: boolean;
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.Ref<HTMLVideoElement>;
   /** Which avatar provider is active */
   avatarProvider?: AvatarProvider;
   /** Ref to the <div> container for SpatialReal's canvas */
-  containerRef?: React.RefObject<HTMLDivElement>;
+  containerRef?: React.Ref<HTMLDivElement>;
   onBack: () => void;
   onStart: () => void;
   onContinue: () => void;
@@ -51,7 +51,7 @@ export function GettingReadyView({ topic, avatarState, wsConnected, canContinue,
     }
   }, [avatarState]);
 
-  const canStart = allReady || (wsConnected && showFallback);
+  const canStart = allReady;
 
   return (
     <div className="getting-ready">

@@ -7,13 +7,13 @@ interface Props {
   mode: SessionMode;
   avatarState: AvatarConnectionState;
   /** Ref to the <video> element that will receive the Simli WebRTC stream */
-  videoRef?: React.RefObject<HTMLVideoElement>;
+  videoRef?: React.Ref<HTMLVideoElement>;
   /** Called when the user clicks "Retry" after an avatar connection failure */
   onRetry?: () => void;
   /** Which avatar provider is active */
   avatarProvider?: AvatarProvider;
   /** Ref to the <div> container for SpatialReal's canvas */
-  containerRef?: React.RefObject<HTMLDivElement>;
+  containerRef?: React.Ref<HTMLDivElement>;
 }
 
 export function AvatarFeed({ mode, avatarState, videoRef, onRetry, avatarProvider = "simli", containerRef }: Props) {

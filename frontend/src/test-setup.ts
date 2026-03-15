@@ -19,3 +19,19 @@ if (typeof globalThis.localStorage === "undefined" || !globalThis.localStorage?.
     writable: true,
   });
 }
+
+if (!("ResizeObserver" in globalThis)) {
+  class MockResizeObserver {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  }
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    value: MockResizeObserver,
+    writable: true,
+  });
+}
+
+if (!window.HTMLMediaElement.prototype.play) {
+  window.HTMLMediaElement.prototype.play = () => Promise.resolve();
+}

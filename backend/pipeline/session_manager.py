@@ -69,6 +69,7 @@ class SessionManager:
         self.history: list[dict] = []
         self.summary: str = ""
         self.turn_count: int = 0
+        self.lesson_progress: dict | None = None
         self._turns_since_compression: int = 0
 
     def append_turn(
@@ -129,6 +130,7 @@ class SessionManager:
             "history": list(self.history),
             "summary": self.summary,
             "turn_count": self.turn_count,
+            "lesson_progress": dict(self.lesson_progress) if self.lesson_progress is not None else None,
             "turns_since_compression": self._turns_since_compression,
         }
 
@@ -153,6 +155,8 @@ class SessionManager:
         instance.history = list(data.get("history", []))
         instance.summary = data.get("summary", "")
         instance.turn_count = data.get("turn_count", 0)
+        lesson_progress = data.get("lesson_progress")
+        instance.lesson_progress = dict(lesson_progress) if isinstance(lesson_progress, dict) else None
         instance._turns_since_compression = data.get("turns_since_compression", 0)
         return instance
 

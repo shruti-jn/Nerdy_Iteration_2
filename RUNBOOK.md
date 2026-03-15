@@ -171,11 +171,11 @@ With both servers running and `VITE_MOCK=false` in `frontend/.env.development`:
 
 **Endpoint:** `ws://localhost:8000/session?topic=photosynthesis`
 
-Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
+Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `session_id` — optional resume token from the browser URL
 
 **Client → Server:**
 - Binary: PCM Int16 @ 16 kHz audio frames
-- JSON: `{ "type": "end_of_utterance" | "barge_in" | "start_lesson" | "simli_sdp_offer" }`
+- JSON: `{ "type": "end_of_utterance" | "barge_in" | "start_lesson" | "continue_lesson" | "simli_sdp_offer" }`
 
 **Server → Client:**
 - `{ "type": "session_start", "session_id": "uuid", "topic": "..." }` — handshake
@@ -190,6 +190,28 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 **REST endpoints:**
 - `GET /topics` — returns available topic list
 - `GET /health`, `GET /ready`, `GET /metrics` — health/readiness/metrics
+
+### Concept Map Progression
+
+What this feature does:
+The concept map shows the lesson step the student has actually reached. It does not jump ahead just because the tutor mentions a later idea.
+
+How it works:
+1. The backend reads the student's transcript for the current turn.
+2. The model may suggest a step with `[STEP:N]`, but that is only a hint.
+3. The backend checks simple lesson rules to decide whether the student really progressed.
+4. The backend stores the approved concept-map step in the session state.
+5. The frontend waits until the tutor turn is committed before updating the map, turn counter, and completion UI together.
+
+Example:
+Input: the tutor is still asking where a tree's mass comes from, and the student says `It came from food`.
+Output: the concept map stays on `The Hook` instead of jumping to `The Ingredients`.
+
+What happens if data is missing?
+If the transcript is empty or unclear, the backend keeps the current concept-map step instead of guessing.
+
+What this system cannot do:
+It cannot perfectly judge every free-form student answer. If a student uses unexpected wording, the tutor may need another turn before the map advances.
 
 ---
 
@@ -250,7 +272,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Teach-Back phase | ✅ Done | Turns 13-14: student explains concept back; triggered by `[TEACH-BACK PHASE]` turn hint |
 | Boredom detection / Cool Fact pivots | ✅ Done | "idk"/"boring"/short answers → Gross or Cool Fact from topic scaffold |
 | Kid-culture analogies | ✅ Done | Minecraft, phone charging, smoothie analogies woven into prompts |
-| Session persistence (reconnect) | ✅ Done | localStorage stores session/topic/avatar; only same-topic + same-avatar sessions can continue; restore sends welcome-back + repeated last prompt |
+| Session persistence (reconnect) | ✅ Done | Browser URL `session_id` is the restore source of truth; removing it starts a fresh session; restore keeps the app on Getting Ready until `Continue Lesson`, then sends the welcome-back prompt |
 | Tutor identity: Socrates VI | ✅ Done | Tutor name updated across prompts, greeting copy, lesson UI, and conversation labels |
 | Tutor speech pronunciation alias | ✅ Done | TTS-only normalization rewrites `Socrates VI` to `Socrates Six` before provider synthesis so spoken audio says "Six" while UI and transcripts stay unchanged |
 | Scorer: Teacher Mode aware | ✅ Done | `score_no_direct_answer()` accepts `teacher_mode` flag; backward compatible |
@@ -274,6 +296,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Visual teaching: TeachingPanel UI (Phase 1.3) | ✅ Done | TeachingPanel + ConceptCanvas + StepProgress components with emoji diagrams |
 | Visual teaching: App integration (Phase 1.4) | ✅ Done | TeachingPanel wired into right rail; mobile-responsive; backward compatible |
 | Visual teaching: session_restore visual (Phase 1.5) | ✅ Done | Send lesson_visual_update after session_restore with clamped step approximation |
+| Concept map progression sync | ✅ Done | Backend owns student progression, restore uses saved concept state, and turn/map/completion UI flush together after tutor commit |
 | Visual teaching: tests (Phase 1.6) | ✅ Done | 23 tests: store visual state (5), StepProgress (6), ConceptCanvas (5), TeachingPanel (7) + socket tests |
 | Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |
 | Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |

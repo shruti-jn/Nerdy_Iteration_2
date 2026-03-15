@@ -218,6 +218,12 @@ class TestSerialization:
         sm = SessionManager(system_prompt=SYSTEM_PROMPT, llm_engine=llm)
         sm.append_turn("Hello", "Hi! What topic?")
         sm.append_turn("Photosynthesis", "Great! What do plants need?")
+        sm.lesson_progress = {
+            "topic": "photosynthesis",
+            "current_step_id": 2,
+            "visual_step_id": 2,
+            "failed_attempts_on_current_step": 1,
+        }
 
         data = sm.to_dict()
         restored = SessionManager.from_dict(data, SYSTEM_PROMPT, llm)
@@ -226,6 +232,7 @@ class TestSerialization:
         assert restored.summary == sm.summary
         assert len(restored.history) == len(sm.history)
         assert restored.history == sm.history
+        assert restored.lesson_progress == sm.lesson_progress
 
     def test_from_dict_produces_correct_context(self):
         """Restored session should produce the same LLM context as the original."""
@@ -253,14 +260,22 @@ class TestSerialization:
         sm = SessionManager(system_prompt=SYSTEM_PROMPT, llm_engine=llm)
         sm.append_turn("Q1", "A1?")
         sm.summary = "Prior summary."
+        sm.lesson_progress = {
+            "topic": "photosynthesis",
+            "current_step_id": 1,
+            "visual_step_id": 1,
+            "failed_attempts_on_current_step": 2,
+        }
 
         data = sm.to_dict()
         assert "history" in data
         assert "summary" in data
         assert "turn_count" in data
+        assert "lesson_progress" in data
         assert "turns_since_compression" in data
         assert data["summary"] == "Prior summary."
         assert data["turn_count"] == 1
+        assert data["lesson_progress"]["failed_attempts_on_current_step"] == 2
 
     def test_from_dict_with_empty_data(self):
         """from_dict with empty dict should produce a fresh session."""
