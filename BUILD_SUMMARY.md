@@ -1394,3 +1394,11 @@ What: Hardened custom-mode Simli turn-to-turn keepalive by matching the silence 
 Why: Live logs showed greeting lip-sync worked, then the Simli signaling socket died during the next tutor turn and dropped later mouth animation; the old 320-byte keepalive frame was much smaller than the `simli-client` P2P transport’s normal 3000-sample PCM payloads.
 
 How: Updated `backend/adapters/avatar_adapter.py` so the custom-mode keepalive sends 3000 PCM16 silence samples (6000 bytes) instead of a tiny 10 ms frame, added a regression check in `backend/tests/test_avatar_adapter.py`, and verified with `python3 -m pytest backend/tests/test_avatar_adapter.py backend/tests/test_server.py -q -k simli` (`7 passed`).
+
+---
+
+### Fix: Resolve git merge conflicts in avatar_adapter.py
+
+- **What:** Removed all git merge conflict markers from `backend/adapters/avatar_adapter.py`
+- **Why:** Unresolved conflicts caused a `SyntaxError` on import, preventing the backend from starting
+- **How:** Kept the HEAD version throughout — it is strictly more robust, adding `_RetryableHandshakeResponseError` handling alongside `TimeoutError`, plus `_preview_payload` and `_parse_answer_sdp` helpers for safer JSON parsing of the Simli SDP answer. Verified with `python -c "from adapters.avatar_adapter import SimliAvatarAdapter"` returning OK.
