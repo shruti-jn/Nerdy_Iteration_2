@@ -238,6 +238,27 @@ describe("useSimliWebRTC", () => {
       expect(dc.send).toHaveBeenCalledWith(audio);
     });
 
+    it("buffers bytes until the DataChannel opens", async () => {
+      const ws = makeOpenWs();
+      const { result } = renderHook(() =>
+        useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
+      );
+      await act(async () => { await result.current.connect(); });
+      const dc = MockRTCPeerConnection.instances[0]._dc;
+      dc.readyState = "connecting";
+
+      const audio = new Uint8Array([1, 2, 3, 4]);
+      act(() => { result.current.sendAudio(audio); });
+      expect(dc.send).not.toHaveBeenCalledWith(audio);
+
+      act(() => {
+        dc.readyState = "open";
+        dc.onopen?.();
+      });
+
+      expect(dc.send).toHaveBeenCalledWith(audio);
+    });
+
     it("is a no-op when DataChannel readyState is not 'open'", async () => {
       const ws = makeOpenWs();
       const { result } = renderHook(() =>
