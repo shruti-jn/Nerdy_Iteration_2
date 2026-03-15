@@ -1218,8 +1218,6 @@ Why: Spatial Real was exhibiting three deadline-critical regressions in the brow
 
 How: Updated `frontend/src/useTutorSocket.ts` to support provider-aware local playback suppression plus an end-of-audio callback, updated `frontend/src/App.tsx` to disable browser playback in Spatial Real mode and send a final `end=true` marker to the SDK, refactored `frontend/src/useSpatialRealAvatar.ts` to move a persistent SDK host container instead of reparenting the canvas, added regression coverage in `frontend/src/useTutorSocket.test.ts` and `frontend/src/App.avatar-lifecycle.test.tsx`, and verified with `npm run typecheck` plus `npm test` in `frontend` (`162 passed, 4 skipped`).
 
----
-
 ## 2026-03-15 16:30
 
 What: Updated tutor-panel copy to remove "Tutor Response" phrasing (`TeachingPanel` + `TutorResponse`), widened the right concept-map rail by 200px+ (desktop and tablet), updated related frontend assertions, fixed a stale backend visuals test expectation uncovered by the required full-suite run, and refreshed the `RUNBOOK.md` feature-status note for concept-map width.
@@ -1244,3 +1242,13 @@ What: Reworked photosynthesis concept-map visuals from step-based tiles into a s
 Why: The previous map only unlocked whole curriculum steps, which hid partial wins like finding sunlight and water and did not match the intended “one image fills in piece by piece” learning experience.
 
 How: Added persistent `revealed_elements` tracking to backend lesson progress, included unlock/progress metadata in `lesson_visual_update` and restore payloads, updated frontend visual types/socket handling to carry that state, replaced the photosynthesis renderer in `ConceptCanvas` with a composed illustration while leaving Newton’s existing layout intact, and verified with targeted pytest, Vitest, and `npm run typecheck`.
+
+---
+
+## 2026-03-15 16:42
+
+What: Triggered a production deploy from `main` after verifying the avatar readiness gating, restored-session handoff, and Simli lip-sync buffering fixes were already present on the branch head.
+
+Why: The user requested that the current avatar fixes be live on production, and merging the older avatar fix branch directly into `main` would have risked overwriting newer committed work that already contains those fixes.
+
+How: Compared `origin/main` against the avatar-fix branch in a clean clone, confirmed the relevant runtime fixes were already on `main`, appended this deployment note, and pushed to `main` to kick off the existing GitHub Actions Fly.io deployment pipeline.
