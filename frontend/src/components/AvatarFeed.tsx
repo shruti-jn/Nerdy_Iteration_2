@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type React from "react";
-import type { SessionMode, AvatarConnectionState } from "../types";
+import type { SessionMode, AvatarConnectionState, AvatarProvider } from "../types";
 import "./AvatarFeed.css";
 
 interface Props {
@@ -10,9 +10,13 @@ interface Props {
   videoRef?: React.RefObject<HTMLVideoElement>;
   /** Called when the user clicks "Retry" after an avatar connection failure */
   onRetry?: () => void;
+  /** Which avatar provider is active */
+  avatarProvider?: AvatarProvider;
+  /** Ref to the <div> container for SpatialReal's canvas */
+  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
-export function AvatarFeed({ mode, avatarState, videoRef, onRetry }: Props) {
+export function AvatarFeed({ mode, avatarState, videoRef, onRetry, avatarProvider = "simli", containerRef }: Props) {
   const isSpeaking = mode === "tutor-responding" || mode === "tutor-greeting";
   const isListening = mode === "student-speaking";
 
@@ -48,8 +52,8 @@ export function AvatarFeed({ mode, avatarState, videoRef, onRetry }: Props) {
           .filter(Boolean)
           .join(" ")}
       >
-        {/* Real Simli WebRTC video — visible once a stream is attached to the ref */}
-        {videoRef && (
+        {/* Simli: WebRTC video — visible once a stream is attached to the ref */}
+        {avatarProvider === "simli" && videoRef && (
           <video
             ref={videoRef}
             autoPlay
@@ -60,6 +64,18 @@ export function AvatarFeed({ mode, avatarState, videoRef, onRetry }: Props) {
             className={[
               "avatar-feed__video",
               streamReady && "avatar-feed__video--active",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          />
+        )}
+        {/* SpatialReal: canvas container — SDK creates <canvas> inside this div */}
+        {avatarProvider === "spatialreal" && containerRef && (
+          <div
+            ref={containerRef}
+            className={[
+              "avatar-feed__canvas-container",
+              streamReady && "avatar-feed__canvas-container--active",
             ]
               .filter(Boolean)
               .join(" ")}

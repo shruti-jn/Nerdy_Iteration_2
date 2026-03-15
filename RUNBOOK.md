@@ -274,3 +274,5 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Visual teaching: session_restore visual (Phase 1.5) | ✅ Done | Send lesson_visual_update after session_restore with clamped step approximation |
 | Visual teaching: tests (Phase 1.6) | ✅ Done | 23 tests: store visual state (5), StepProgress (6), ConceptCanvas (5), TeachingPanel (7) + socket tests |
 | Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |
+| Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |
+| SpatialReal avatar integration | ✅ Done | Feature flag `AVATAR_PROVIDER=spatialreal`; URL param `?avatar=spatialreal`; SDK Mode (frontend-driven); 10 backend tests |

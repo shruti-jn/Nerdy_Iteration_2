@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect } from "react";
-import type { SessionStore } from "./types";
+import type { SessionStore, AvatarProvider } from "./types";
 
 /** Returns a compact timestamp prefix: [HH:MM:SS.mmm] */
 function ts(): string {
@@ -21,10 +21,14 @@ export interface TutorSocketOptions {
   enabled?: boolean;
   /** Called once when the server sends session_start — use to initiate Simli WebRTC */
   onSessionStart?: () => void;
+  /** Called with the avatar provider from session_start/session_restore */
+  onAvatarProvider?: (provider: AvatarProvider) => void;
   /** Called with raw PCM bytes for each audio_chunk — use to forward to Simli DataChannel */
   onAudioChunk?: (pcm: Uint8Array) => void;
   /** Called when the backend reports a Simli avatar connection failure */
   onSimliError?: (message: string) => void;
+  /** Called when the backend sends spatialreal_session_init with token and config */
+  onSpatialRealInit?: (sessionToken: string, appId: string, avatarId: string) => void;
   /** Skip real WebSocket and simulate a fake tutor response (for local UI dev). Default false. */
   _useMock?: boolean;
 }
@@ -45,8 +49,9 @@ export interface TutorSocket {
 }
 
 type ServerMessage =
-  | { type: "session_start"; session_id: string; topic?: string; total_turns?: number }
-  | { type: "session_restore"; session_id: string; topic?: string; total_turns?: number; turn_count?: number; history?: Array<{ role: string; content: string }> }
+  | { type: "session_start"; session_id: string; topic?: string; total_turns?: number; avatar_provider?: AvatarProvider }
+  | { type: "session_restore"; session_id: string; topic?: string; total_turns?: number; turn_count?: number; avatar_provider?: AvatarProvider; history?: Array<{ role: string; content: string }> }
+  | { type: "spatialreal_session_init"; session_token: string; app_id: string; avatar_id: string }
   | { type: "tutor_text_chunk"; text: string; timing: Record<string, number | null>; is_greeting?: boolean }
   | { type: "audio_chunk"; data: string }
   | { type: "simli_sdp_answer"; sdp: string; iceServers?: RTCIceServer[] }
@@ -198,7 +203,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       }
 
       if (msg.type === "session_start") {
-        console.debug(ts(), "[TutorSocket] session_start received, session_id:", msg.session_id, "topic:", msg.topic);
+        console.debug(ts(), "[TutorSocket] session_start received, session_id:", msg.session_id, "topic:", msg.topic, "avatar_provider:", msg.avatar_provider);
         // Persist session ID for reconnection on page refresh
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
         store.setMode("idle");
@@ -206,11 +211,19 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         if (msg.total_turns) {
           store.setTurnInfo(0, msg.total_turns);
         }
+        // Notify App which avatar provider is active
+        if (msg.avatar_provider) {
+          optsRef.current.onAvatarProvider?.(msg.avatar_provider);
+        }
         onSessionStart?.();
       } else if (msg.type === "session_restore") {
-        console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count);
+        console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count, "avatar_provider:", msg.avatar_provider);
         // Persist session ID (may be the same, but ensures consistency)
         localStorage.setItem(SESSION_ID_KEY, msg.session_id);
+        // Notify App which avatar provider is active
+        if (msg.avatar_provider) {
+          optsRef.current.onAvatarProvider?.(msg.avatar_provider);
+        }
         // Convert backend history [{role, content}] to ConversationEntry[]
         const restoredHistory = (msg.history ?? []).map((entry, idx) => ({
           id: `restored-${idx}-${Date.now()}`,
@@ -285,6 +298,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         window.dispatchEvent(new CustomEvent("simli:sdp-answer", {
           detail: { sdp: msg.sdp, iceServers: msg.iceServers },
         }));
+      } else if (msg.type === "spatialreal_session_init") {
+        console.debug(ts(), "[TutorSocket] spatialreal_session_init received, app_id:", msg.app_id, "avatar_id:", msg.avatar_id);
+        optsRef.current.onSpatialRealInit?.(msg.session_token, msg.app_id, msg.avatar_id);
       } else if (msg.type === "student_transcript") {
         store.updateLastStudentUtterance(msg.text);
       } else if (msg.type === "student_partial") {
@@ -305,14 +321,18 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         playbackQueueRef.current = Promise.resolve();
         store.bargeIn();
       } else if (msg.type === "error") {
-        // Simli-specific errors — surface via dedicated callback so the
+        // Avatar-specific errors — surface via dedicated callback so the
         // avatar UI can show an error state with a retry button.
         const isSimliError = msg.code === "SIMLI_CONNECT_FAILED" || msg.code === "SIMLI_NOT_CONFIGURED";
+        const isSpatialRealError = msg.code === "SPATIALREAL_INIT_FAILED";
         if (isSimliError) {
           const errorMsg = msg.code === "SIMLI_NOT_CONFIGURED"
             ? "Avatar not configured. Check SIMLI_API_KEY and SIMLI_FACE_ID."
             : "Avatar connection failed. You can retry or continue without video.";
           optsRef.current.onSimliError?.(errorMsg);
+        }
+        if (isSpatialRealError) {
+          optsRef.current.onSimliError?.(msg.message ?? "SpatialReal avatar initialization failed.");
         }
 
         if (msg.timing) {
@@ -335,9 +355,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
           });
         }
         console.error(ts(), "[TutorSocket] Server error:", msg.code, msg.message);
-        // Simli errors don't affect session mode — the student can still
+        // Avatar errors don't affect session mode — the student can still
         // talk to the tutor; only the avatar video is unavailable.
-        if (isSimliError) {
+        if (isSimliError || isSpatialRealError) {
           // Don't change mode — student can still use the tutor without avatar
         } else if (msg.code === "GREETING_FAILED") {
           // Greeting failed — surface error and reset mode so UI isn't stuck.
@@ -376,9 +396,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       setTimeout(() => {
         optsRef.current.store.setMode("idle");
         optsRef.current.onSessionStart?.();
-        // No real avatar in mock mode — signal error so fallback appears immediately
+        // No real avatar in mock mode — signal error so fallback appears immediately.
+        // Use a silent error message that the UI can suppress.
         setTimeout(() => {
-          optsRef.current.onSimliError?.("Mock mode — no avatar available");
+          optsRef.current.onSimliError?.("");
         }, 200);
       }, 100);
       return;

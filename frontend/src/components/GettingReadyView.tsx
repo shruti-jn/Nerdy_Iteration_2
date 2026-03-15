@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type React from "react";
-import type { AvatarConnectionState } from "../types";
+import type { AvatarConnectionState, AvatarProvider } from "../types";
 import "./GettingReadyView.css";
 
 interface Props {
@@ -8,13 +8,17 @@ interface Props {
   avatarState: AvatarConnectionState;
   wsConnected: boolean;
   videoRef: React.RefObject<HTMLVideoElement>;
+  /** Which avatar provider is active */
+  avatarProvider?: AvatarProvider;
+  /** Ref to the <div> container for SpatialReal's canvas */
+  containerRef?: React.RefObject<HTMLDivElement>;
   onBack: () => void;
   onStart: () => void;
   /** Called when the <video> element starts playing — signals avatar is truly live */
   onVideoPlaying?: () => void;
 }
 
-export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, onBack, onStart, onVideoPlaying }: Props) {
+export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, avatarProvider = "simli", containerRef, onBack, onStart, onVideoPlaying }: Props) {
   const avatarReady = avatarState === "live";
   const allReady = wsConnected && avatarReady;
 
@@ -62,14 +66,22 @@ export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, on
 
         {/* Avatar preview */}
         <div className="getting-ready__avatar-area">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            onPlaying={onVideoPlaying}
-            className={`getting-ready__video ${avatarReady ? "getting-ready__video--active" : ""}`}
-          />
+          {avatarProvider === "simli" && (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              onPlaying={onVideoPlaying}
+              className={`getting-ready__video ${avatarReady ? "getting-ready__video--active" : ""}`}
+            />
+          )}
+          {avatarProvider === "spatialreal" && containerRef && (
+            <div
+              ref={containerRef}
+              className={`getting-ready__canvas-container ${avatarReady ? "getting-ready__canvas-container--active" : ""}`}
+            />
+          )}
           {!avatarReady && (
             <div className="getting-ready__avatar-placeholder">
               <div className="getting-ready__face getting-ready__face--shimmer">

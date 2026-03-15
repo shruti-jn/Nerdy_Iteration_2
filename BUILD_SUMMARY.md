@@ -1023,3 +1023,60 @@ How:
 - **TestVisualToMessage (3 tests)**: normal step dict shape and values, recap flag propagation, exact 10-key schema validation.
 - All 23 tests pass. Pre-existing failures in `test_server.py`, `test_observability.py`, `test_eval_artifacts.py`, and frontend `mic-pipeline` are unrelated.
 Refs: `backend/tests/test_visuals.py:1-193`, `backend/prompts/visuals.py:28-242`
+
+---
+
+### Browser E2E Test Layer (Phase 5)
+
+What: Added deterministic and live browser E2E test coverage for the multimodal lesson flow using Playwright. 23 deterministic tests cover topic selection, getting-ready, greeting, student turns, visual panel updates, session completion, and avatar fallback. Live canary tests exist for pre-submission validation.
+
+Why: The repo had strong unit/contract coverage but zero browser-level evidence. Submission requires proof that the real user flow works end-to-end in a browser, including the new visual teaching panel.
+
+How:
+- Installed `@playwright/test` and added `e2e`, `e2e:live`, `e2e:all` scripts to `package.json`
+- Fixed all CSS selectors from `.tutor-response` → `.teaching-panel` across 6 spec/helper files (component was renamed in Phase 1.3)
+- Extended the mock in `useTutorSocket.ts` to emit `lesson_visual_update` during greeting and student turns, and `session_complete` when turns are exhausted
+- Added mock avatar error signal so the "Start without avatar" fallback appears immediately in test mode (no 10-second wait)
+- Fixed `GettingReadyView` fallback timer bug: split the `avatarState` effect into two (timer-based + error-based) so the 8s "slow" state change doesn't reset the 10s fallback timer
+- Added `__store` window exposure in mock mode for E2E state manipulation
+- Excluded `e2e/` from Vitest config to prevent Playwright specs from running as unit tests
+- Used `page.mouse` API for hold-to-speak simulation (React's onMouseDown/onMouseUp require native mouse events, not `dispatchEvent`)
+- All 23 deterministic tests pass locally; 23 evidence screenshots generated in `e2e/evidence/`
+- Confirmed in browser: visual panel, celebration overlay, and mic interaction all work correctly
+
+Decisions:
+- **Playwright over Cypress**: Playwright is lighter, faster, and has better TypeScript support. The project already had a `playwright.config.ts` stub.
+- **Mock avatar error vs 10s timer**: Firing `onSimliError("")` immediately in mock mode makes tests ~10x faster (no waiting for fallback timer). The empty error message avoids showing a banner.
+- **`page.mouse` API over `dispatchEvent`**: React 18's event delegation doesn't reliably pick up synthetic events from `dispatchEvent("mousedown")`. The `page.mouse` API creates trusted native events.
+- **Separate timer/error effects in GettingReadyView**: The original single effect with `[avatarReady, avatarState]` deps caused the 10s fallback timer to reset when `avatarState` changed from "connecting" to "slow" at t=8s, pushing the fallback to t=18s.
+
+Refs: `frontend/playwright.config.ts:1-38`, `frontend/e2e/deterministic/*.spec.ts`, `frontend/e2e/live/one-turn.spec.ts`, `frontend/e2e/helpers.ts`, `frontend/src/useTutorSocket.ts:366-395`, `frontend/src/components/GettingReadyView.tsx:24-42`, `frontend/vite.config.ts:18-22`
+
+---
+
+## SpatialReal Avatar Integration via Feature Flag
+
+What: Added SpatialReal as an alternative avatar provider behind an `AVATAR_PROVIDER` feature flag, keeping Simli as the default. SpatialReal replaces only Stage 4 (Avatar) of the pipeline — STT, LLM, and TTS remain unchanged. Added URL param switching (`?avatar=spatialreal`) for runtime provider selection without server restart.
+
+Why: SpatialReal offers on-device WebGL/WebGPU avatar rendering (vs Simli's server-side WebRTC), which can reduce latency and infrastructure costs. The feature flag allows A/B testing between providers without code changes.
+
+How:
+- **Backend config**: Added `avatar_provider`, `spatialreal_api_key`, `spatialreal_app_id`, `spatialreal_avatar_id`, `spatialreal_region` to `config.py` and `.env.example`. URL param `?avatar=spatialreal` overrides the env default in the WS handler.
+- **Backend adapter**: Created `backend/adapters/spatialreal_adapter.py` — a thin adapter that generates a session token via `POST /v1/console/session-tokens` with `X-Api-Key` header. `stream_audio()` and `stop()` are no-ops since the frontend handles audio in SDK Mode.
+- **Backend main.py**: After `session_start`/`session_restore`, if provider is `spatialreal`, generates a token and sends `spatialreal_session_init { session_token, app_id, avatar_id }` to the frontend. Includes `avatar_provider` in both `session_start` and `session_restore` messages.
+- **Backend orchestrator**: Made Simli audio forwarding conditional on `avatar_provider == "simli"` — skips `send_audio()` and avatar metrics when using SpatialReal.
+- **Frontend SDK**: Installed `@spatialwalk/avatarkit`, added `avatarkitVitePlugin()` to Vite config for WASM file serving and correct MIME types.
+- **Frontend hook**: Created `useSpatialRealAvatar.ts` — manages the full AvatarKit Web SDK lifecycle: `initialize()` (dynamic import to avoid loading WASM when using Simli), `start()` (must be in user gesture), `sendAudio()`, `interrupt()`, `dispose()`.
+- **Frontend socket**: Added `spatialreal_session_init` to `ServerMessage` union, `onSpatialRealInit` and `onAvatarProvider` callbacks to `TutorSocketOptions`. Forwards `?avatar=` URL param to the WS URL.
+- **Frontend App.tsx**: Both hooks always called (React rules of hooks). `avatarProvider` state drives conditional logic in `onSessionStart` (Simli WebRTC vs SpatialReal init), `onAudioChunk` (DataChannel vs SDK send), `handleStartLesson` (SpatialReal `start()` for AudioContext), `handleBargeIn` (SpatialReal `interrupt()`). Added `containerRef` for SpatialReal's `<div>` container.
+- **Frontend components**: `AvatarFeed` and `GettingReadyView` conditionally render `<video>` (Simli) or `<div>` (SpatialReal) based on `avatarProvider` prop. Added CSS for `.avatar-feed__canvas-container` and `.getting-ready__canvas-container` matching the video element styling.
+- **Tests**: 10 backend tests for the SpatialReal adapter (token generation, validation, error handling, timeout, no-ops). All 280 backend tests pass. All 139 frontend tests pass (4 pre-existing mic-pipeline failures unrelated to this change).
+
+Decisions:
+- **SDK Mode over Host Mode**: SDK Mode keeps the backend thin (one REST call for token). Frontend owns the SpatialReal WebSocket connection and audio forwarding. Avoids backend-to-SpatialReal latency and a second WebSocket relay. Host Mode would have required backend-side audio proxying similar to Simli, adding complexity.
+- **Frontend-driven audio forwarding for SpatialReal**: TTS `audio_chunk` messages already arrive at the frontend for local playback. For SpatialReal, these are forwarded to the SDK directly via `controller.send()`. This eliminates the backend as a relay hop, unlike Simli where the backend proxies audio.
+- **Dynamic import of @spatialwalk/avatarkit**: The SDK includes WASM files (~5MB). Using `import("@spatialwalk/avatarkit")` inside `initialize()` avoids loading WASM when Simli is the active provider, keeping the initial bundle lean.
+- **URL param switching (`?avatar=spatialreal`)**: Allows runtime switching without changing .env or restarting. The backend reads `ws.query_params.get("avatar")` and overrides the config default. The frontend forwards the browser URL's `?avatar=` param to the WS URL. This makes A/B testing trivial.
+- **Both hooks always called**: React's rules of hooks require consistent call order. Both `useSimliWebRTC` and `useSpatialRealAvatar` are called every render, but only the active provider's hook does real work.
+
+Refs: `backend/config.py:60-68`, `backend/adapters/spatialreal_adapter.py:1-145`, `backend/main.py:30,183-186,209-224`, `backend/pipeline/orchestrator_custom.py:58,317-330,348`, `backend/tests/test_spatialreal_adapter.py`, `backend/.env.example:55-64`, `frontend/vite.config.ts:3-5`, `frontend/src/types.ts:4`, `frontend/src/useSpatialRealAvatar.ts`, `frontend/src/useTutorSocket.ts:27-29,49-51,96-98,207-211,299-301,328-331`, `frontend/src/App.tsx:15-16,39-42,78-148,290-296,361-365`, `frontend/src/components/AvatarFeed.tsx:3,10-13,52-69`, `frontend/src/components/GettingReadyView.tsx:4,11-13,65-78`, `frontend/src/components/AvatarFeed.css:48-66`, `frontend/src/components/GettingReadyView.css:83-100`

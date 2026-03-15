@@ -12,7 +12,8 @@ import { useSessionStore } from "./useSessionStore";
 import { useTutorSocket } from "./useTutorSocket";
 import { useAudioCapture } from "./useAudioCapture";
 import { useSimliWebRTC } from "./useSimliWebRTC";
-import type { TopicId } from "./types";
+import { useSpatialRealAvatar } from "./useSpatialRealAvatar";
+import type { TopicId, AvatarProvider } from "./types";
 import "./App.css";
 
 const IS_MOCK = import.meta.env.VITE_MOCK === "true";
@@ -34,11 +35,18 @@ export function App() {
   });
 
 
+  // ── Avatar provider (set by backend in session_start) ────────────────────
+  const [avatarProvider, setAvatarProvider] = useState<AvatarProvider>("simli");
+
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Ref for the SpatialReal avatar <div> container (SDK creates <canvas> inside)
+  const containerRef = useRef<HTMLDivElement>(null);
   // Store the live MediaStream so it can be re-attached when the <video> element
   // changes across view transitions (GettingReady → Lesson unmounts/remounts the video).
   const streamRef = useRef<MediaStream | null>(null);
+  // Store SpatialReal init data until the container element is mounted
+  const srInitRef = useRef<{ appId: string; sessionToken: string; avatarId: string } | null>(null);
 
   // ── Avatar connection state (shimmer → slow → live) ─────────────────────
   const [avatarState, setAvatarState] = useState<import("./types").AvatarConnectionState>("connecting");
@@ -70,24 +78,32 @@ export function App() {
 
   const simliRtcRef = useRef<{ connect: () => Promise<boolean>; sendAudio: (data: Uint8Array) => void; readonly isConnected: boolean } | null>(null);
 
+  // SpatialReal hook (always called — React rules of hooks — but only active when provider is "spatialreal")
+  const spatialReal = useSpatialRealAvatar();
+
   const socket = useTutorSocket({
     store,
     topicId: store.topicId ?? undefined,
     enabled: wsEnabled,
     _useMock: IS_MOCK,
+    onAvatarProvider: (provider) => {
+      console.debug("[App] Avatar provider set to:", provider);
+      setAvatarProvider(provider);
+    },
     onSessionStart: () => {
+      // SpatialReal: avatar init happens via onSpatialRealInit, not here
+      if (avatarProvider === "spatialreal") {
+        console.debug("[App] onSessionStart — SpatialReal mode, waiting for spatialreal_session_init");
+        return;
+      }
+      // Simli: connect WebRTC
       // Skip if Simli is already connected or a connect sequence is in progress.
-      // This prevents destroying a working PeerConnection when onSessionStart
-      // fires a second time (e.g. WS auto-reconnect or StrictMode re-mount).
       if (simliConnectingRef.current || simliRtcRef.current?.isConnected) {
         console.debug("[App] onSessionStart — Simli already connected/connecting, skipping");
         return;
       }
       simliConnectingRef.current = true;
       console.debug("[App] onSessionStart — beginning Simli connect sequence");
-      // Retry Simli connect with backoff — only retry when the WS isn't open
-      // yet (connect() returns false). Once it returns true (SDP sent), stop
-      // retrying and let ICE negotiation proceed undisturbed.
       const tryConnect = (attempt: number) => {
         if (attempt > 5) {
           console.error("[App] Simli connect failed after 5 attempts — no open WebSocket");
@@ -111,14 +127,37 @@ export function App() {
       };
       tryConnect(0);
     },
+    onSpatialRealInit: (sessionToken, appId, avatarId) => {
+      console.debug("[App] SpatialReal init received, appId:", appId, "avatarId:", avatarId);
+      // Store init data — initialize when container is available
+      srInitRef.current = { appId, sessionToken, avatarId };
+      const container = containerRef.current;
+      if (container) {
+        spatialReal.initialize(appId, sessionToken, avatarId, container).then(() => {
+          if (slowTimerRef.current) {
+            clearTimeout(slowTimerRef.current);
+            slowTimerRef.current = null;
+          }
+          setAvatarState("live");
+        }).catch((err) => {
+          console.error("[App] SpatialReal initialize failed:", err);
+          setAvatarState("error");
+          store.setError("Avatar initialization failed.");
+        });
+      }
+    },
     onAudioChunk: (pcm) => {
-      // Forward TTS audio to Simli via DataChannel for avatar lip-sync
-      simliRtcRef.current?.sendAudio(pcm);
+      if (avatarProvider === "spatialreal") {
+        // Forward TTS audio to SpatialReal SDK for lip-sync
+        spatialReal.sendAudio(pcm.buffer as ArrayBuffer, false);
+      } else {
+        // Forward TTS audio to Simli via DataChannel for avatar lip-sync
+        simliRtcRef.current?.sendAudio(pcm);
+      }
     },
     onSimliError: (message) => {
-      console.debug("[App] onSimliError:", message);
+      console.debug("[App] onAvatarError:", message);
       simliConnectingRef.current = false;
-      // Cancel the slow timer so "almost ready" text doesn't linger
       if (slowTimerRef.current) {
         clearTimeout(slowTimerRef.current);
         slowTimerRef.current = null;
@@ -228,6 +267,31 @@ export function App() {
     simliRtcRef.current = simliRtc;
   }, [simliRtc]);
 
+  // ── SpatialReal: initialize when container becomes available ──────────────
+  // The container ref may not be mounted when spatialreal_session_init arrives
+  // (because the GettingReadyView mounts it). This effect retries initialization
+  // once the ref is assigned.
+  useEffect(() => {
+    if (avatarProvider !== "spatialreal") return;
+    if (!srInitRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
+    if (spatialReal.isConnected || spatialReal.isLoading) return;
+    const { appId, sessionToken, avatarId } = srInitRef.current;
+    spatialReal.initialize(appId, sessionToken, avatarId, container).then(() => {
+      if (slowTimerRef.current) {
+        clearTimeout(slowTimerRef.current);
+        slowTimerRef.current = null;
+      }
+      setAvatarState("live");
+    }).catch((err) => {
+      console.error("[App] SpatialReal deferred initialize failed:", err);
+      setAvatarState("error");
+      store.setError("Avatar initialization failed.");
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.view, avatarProvider]);
+
   // Re-attach the Simli MediaStream to the new <video> element after a view
   // transition (getting-ready → lesson). The old <video> is destroyed on
   // unmount; the new one in AvatarFeed mounts with no srcObject. ontrack
@@ -270,17 +334,28 @@ export function App() {
   const handleBack = useCallback(() => {
     console.debug("[App] handleBack — disconnecting WS, resetting store");
     simliConnectingRef.current = false;
+    srInitRef.current = null;
+    if (avatarProvider === "spatialreal") {
+      spatialReal.dispose();
+    }
+    setAvatarProvider("simli"); // reset to default
     socket.disconnect();
     store.reset();
     store.setView("topic-select");
-  }, [socket, store]);
+  }, [socket, store, avatarProvider, spatialReal]);
 
   const handleStartLesson = useCallback(() => {
-    console.debug("[App] handleStartLesson — stream saved:", !!streamRef.current, "avatarState:", avatarState);
+    console.debug("[App] handleStartLesson — avatarProvider:", avatarProvider, "stream saved:", !!streamRef.current, "avatarState:", avatarState);
     store.setView("lesson");
     store.setMode("tutor-greeting");
+    // SpatialReal: start() must be called from a user gesture (AudioContext requirement)
+    if (avatarProvider === "spatialreal") {
+      spatialReal.start().catch((err) => {
+        console.error("[App] SpatialReal start failed:", err);
+      });
+    }
     socket.sendStartLesson();
-  }, [socket, store, avatarState]);
+  }, [socket, store, avatarState, avatarProvider, spatialReal]);
 
   // ── Mic handlers ───────────────────────────────────────────────────────────
 
@@ -349,9 +424,12 @@ export function App() {
 
   const handleBargeIn = useCallback(() => {
     console.log(ts(), "[Mic] ⚡ BARGE-IN");
+    if (avatarProvider === "spatialreal") {
+      spatialReal.interrupt();
+    }
     socket.sendBargeIn();
     store.bargeIn();
-  }, [socket, store]);
+  }, [socket, store, avatarProvider, spatialReal]);
 
   // ── Keyboard shortcut: Space bar to hold-to-speak (lesson view only) ──────
   useEffect(() => {
@@ -389,6 +467,8 @@ export function App() {
         avatarState={avatarState}
         wsConnected={socket.isConnected}
         videoRef={videoRef as React.RefObject<HTMLVideoElement>}
+        avatarProvider={avatarProvider}
+        containerRef={containerRef as React.RefObject<HTMLDivElement>}
         onBack={handleBack}
         onStart={handleStartLesson}
         onVideoPlaying={handleVideoPlaying}
@@ -408,7 +488,7 @@ export function App() {
         </div>
 
         <div className="app__col app__col--center">
-          <AvatarFeed mode={store.mode} videoRef={videoRef} avatarState={avatarState} onRetry={handleAvatarRetry} />
+          <AvatarFeed mode={store.mode} videoRef={videoRef} avatarState={avatarState} onRetry={handleAvatarRetry} avatarProvider={avatarProvider} containerRef={containerRef as React.RefObject<HTMLDivElement>} />
         </div>
 
         <div className="app__col app__col--right">
