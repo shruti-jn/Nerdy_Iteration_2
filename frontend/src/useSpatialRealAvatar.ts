@@ -74,6 +74,8 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
   const avatarViewRef = useRef<unknown>(null);
   const controllerRef = useRef<unknown>(null);
   const initializedRef = useRef(false);
+  // True after controller.start() resolves — audio can only be sent after this
+  const startedRef = useRef(false);
 
   const initialize = useCallback(
     async (
@@ -193,7 +195,8 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
       // initializeAudioContext MUST be called within a user gesture
       await ctrl.initializeAudioContext();
       await ctrl.start();
-      console.debug(ts(), "[SpatialReal] Controller started");
+      startedRef.current = true;
+      console.debug(ts(), "[SpatialReal] Controller started — audio forwarding enabled");
     } catch (err) {
       console.error(ts(), "[SpatialReal] start() failed:", err);
     }
@@ -201,6 +204,8 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
 
   const sendAudio = useCallback(
     (pcmBytes: ArrayBuffer, isEnd: boolean) => {
+      // Don't forward audio until controller.start() has connected the service
+      if (!startedRef.current) return;
       const ctrl = controllerRef.current as {
         send: (data: ArrayBuffer, end?: boolean) => string | null;
       } | null;
@@ -243,6 +248,7 @@ export function useSpatialRealAvatar(): SpatialRealAvatar {
     controllerRef.current = null;
     avatarViewRef.current = null;
     initializedRef.current = false;
+    startedRef.current = false;
     setIsConnected(false);
     setIsLoading(false);
     setConnectionState(null);
