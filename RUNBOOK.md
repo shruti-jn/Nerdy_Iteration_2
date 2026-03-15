@@ -17,7 +17,9 @@
 **Backend — copy and fill in your `.env`:**
 ```bash
 cp backend/.env.example backend/.env
-# Fill in: DEEPGRAM_API_KEY, GROQ_API_KEY, ELEVENLABS_API_KEY, SIMLI_API_KEY
+# Fill in: DEEPGRAM_API_KEY, GROQ_API_KEY, CARTESIA_API_KEY,
+#          CARTESIA_VOICE_ID, SIMLI_API_KEY, SIMLI_FACE_ID
+# Optional avatar provider keys: SPATIALREAL_*
 ```
 
 **Backend — create virtualenv and install deps:**
@@ -130,7 +132,7 @@ Artifacts: `backend/evals/results/`, `backend/benchmarks/results/`. Exit code 1 
 | [tests/test_vad_handler.py](backend/tests/test_vad_handler.py) | Voice activity detection |
 | [tests/test_llm_engine.py](backend/tests/test_llm_engine.py) | Groq LLM streaming |
 | [tests/test_stt_adapter.py](backend/tests/test_stt_adapter.py) | Deepgram STT |
-| [tests/test_tts_adapter.py](backend/tests/test_tts_adapter.py) | TTS adapter (Deepgram / ElevenLabs) |
+| [tests/test_tts_adapter.py](backend/tests/test_tts_adapter.py) | TTS adapter (Cartesia + legacy provider guards) |
 | [tests/test_eval_artifacts.py](backend/tests/test_eval_artifacts.py) | Eval/benchmark artifact schema, percentile, pass/fail logic |
 | [tests/test_visuals.py](backend/tests/test_visuals.py) | Visual registry: step-tag parsing, step/recap lookup, clamping, message serialisation |
 
@@ -148,6 +150,20 @@ npm test -- --watch
 npm test -- --coverage
 ```
 
+### Browser E2E (Playwright)
+```bash
+cd frontend
+
+# Deterministic browser gate
+npm run e2e
+
+# Live canary gate (real keys + running backend/frontend)
+npm run e2e:live
+
+# Run both projects
+npm run e2e:all
+```
+
 ---
 
 ## 4. Manual End-to-End Testing
@@ -158,10 +174,11 @@ With both servers running and `VITE_MOCK=false` in `frontend/.env.development`:
 2. Click **Photosynthesis** (or Newton's Laws) — transitions to **Getting Ready** view
 3. Watch the progress stepper: "Connecting to tutor…" ✓ → "Loading avatar…" ✓ → "Ready!"
 4. Click **Start Lesson** (enabled once WS + avatar are connected) — transitions to **Lesson** view
-5. Nova automatically greets the student (mic is disabled during greeting, hint says "Nova is introducing the topic…")
+5. **Socrates VI** automatically greets the student (mic is disabled during greeting)
 6. After greeting completes, mic enables — hold to speak, release to send
-7. The AI tutor responds with text + synthesized audio via the 8-turn Socratic flow
-8. Check latency breakdown at `http://localhost:8000/metrics`
+7. The right-rail teaching panel appears and updates deterministically as concept-map progression advances
+8. The AI tutor responds with text + synthesized audio through the Socratic flow (default `MAX_TURNS=15`)
+9. Check latency breakdown at `http://localhost:8000/metrics`
 
 **Mock mode** (`VITE_MOCK=true`): The full 3-view flow works without a backend — greeting is simulated.
 
@@ -171,20 +188,24 @@ With both servers running and `VITE_MOCK=false` in `frontend/.env.development`:
 
 **Endpoint:** `ws://localhost:8000/session?topic=photosynthesis`
 
-Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `session_id` — optional resume token from the browser URL
+Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`; `session_id` — optional resume token from the browser URL; `avatar` — optional (`simli` or `spatialreal`)
 
 **Client → Server:**
 - Binary: PCM Int16 @ 16 kHz audio frames
 - JSON: `{ "type": "end_of_utterance" | "barge_in" | "start_lesson" | "continue_lesson" | "simli_sdp_offer" }`
 
 **Server → Client:**
-- `{ "type": "session_start", "session_id": "uuid", "topic": "..." }` — handshake
+- `{ "type": "session_start", "session_id": "uuid", "topic": "...", "total_turns": number, "avatar_provider": "simli"|"spatialreal" }` — handshake
+- `{ "type": "session_restore", "session_id": "uuid", "turn_count": number, "history": [...] }` — resumable session payload
+- `{ "type": "lesson_visual_update", "diagramId": "...", "stepId": number, "stepLabel": "...", "totalSteps": number, "highlightKeys": [...], "caption": string|null, "turnNumber": number, "isRecap": bool }` — backend-owned visual teaching state
 - `{ "type": "student_partial", "text": "..." }` — live partial transcript (streaming STT)
 - `{ "type": "student_transcript", "text": "..." }` — final STT result
 - `{ "type": "tutor_text_chunk", "text": "...", "timing": {...}, "is_greeting": bool }` — response + latency metrics
 - `{ "type": "audio_chunk", "data": "base64-pcm" }` — TTS audio (streamed)
 - `{ "type": "greeting_complete" }` — greeting turn finished, mic can enable
+- `{ "type": "session_complete", "turn_number": number, "total_turns": number }` — all turns used
 - `{ "type": "barge_in_ack" }` — interrupt acknowledged
+- `{ "type": "spatialreal_session_init", "session_token": "...", "app_id": "...", "avatar_id": "..." }` — SpatialReal SDK init payload (only when SpatialReal is active)
 - `{ "type": "error", "code": "...", "message": "...", "timing": {...} }` — error with partial timing (stages that completed before the failure)
 
 **REST endpoints:**
@@ -302,3 +323,5 @@ It cannot perfectly judge every free-form student answer. If a student uses unex
 | Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |
 | SpatialReal avatar integration | ✅ Done | Feature flag `AVATAR_PROVIDER=spatialreal`; URL param `?avatar=spatialreal`; SDK Mode (frontend-driven); 10 backend tests |
 | Wider concept map panel | ✅ Done | Right rail 540px desktop + 480px tablet (was 340px/280px); larger emoji diagrams (28px); asymmetric grid layout |
+| Docs and submission cleanup (Phase 6) | ✅ Done | README/RUNBOOK reconciled to current multimodal flow, commands, websocket visual contract, and artifact evidence map |
+| Demo script + latency story package | ✅ Done | Added a 10-minute presenter script with live demo flow, evidence-backed latency claims, Simli-vs-SpatialReal comparison protocol, and Langfuse+Braintrust dashboard talk track |

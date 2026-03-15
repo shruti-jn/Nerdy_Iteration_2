@@ -1262,3 +1262,45 @@ What: Created a fresh `main` commit to trigger deployment after enabling Fly.io 
 Why: The repository is now configured to deploy on pushes to `main`, so a clean push was needed to kick the updated deployment path.
 
 How: Used a clean temporary checkout of `main`, appended this `BUILD_SUMMARY.md` entry, and pushed the commit to GitHub so Fly/GitHub automation can pick it up without including unrelated local workspace files.
+
+---
+
+## 2026-03-15 17:12
+
+What: Improved photosynthesis tutoring answer-uptake and rebuilt the photosynthesis map into an input -> leaf factory -> output flow with 8 core clues instead of decorative scene-piece unlocks.
+
+Why: The tutor was re-asking facts students had already said, rich answers were not moving the lesson forward cleanly, and the old map rewarded loosely related visuals like roots/fruit instead of the core causal structure of photosynthesis.
+
+How: Added explicit runtime prompt state for accepted/missing concepts plus bridge-forward guidance, tightened photosynthesis reveal/mastery rules and removed roots/fruit from required unlock progress, rewrote the photosynthesis `ConceptCanvas` into a process map, updated progress copy/tests, and verified with `source venv/bin/activate && pytest tests/test_lesson_progress.py tests/test_visuals.py tests/test_orchestrator_custom.py tests/test_server.py -q`, `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts`, and `npm run typecheck`.
+
+---
+
+## 2026-03-15 17:13
+
+What: Added a presenter-ready demo package at `DEMO_SCRIPT_LATENCY_STORY.md` with a timed 10-minute script (brief, live walkthrough, technical deep-dive), evidence-safe latency claims, a repeatable Simli-vs-SpatialReal comparison protocol, and a dashboard/Q&A talk track for Langfuse + Braintrust. Updated the Feature Status table in `RUNBOOK.md` with a new "Demo script + latency story package" row.
+
+Why: The user needed a single script they can run live and then go technical without over-claiming telemetry; latency and dashboard claims had to map to existing code/artifacts and explicitly call out current gaps.
+
+How: Consolidated claim-safe facts from `BUILD_SUMMARY.md`, runtime instrumentation paths, and benchmark artifacts; wrote a narrative that separates hard evidence from non-claims; included a controlled A/B method using `?avatar=simli` and `?avatar=spatialreal` with `/metrics` + `frontend_e2e_ms`; and validated repo health by running full backend and frontend suites (`python3 -m pytest` in `backend`: `347 passed, 1 skipped, 7 deselected`; `npm test -- --run` in `frontend`: `163 passed, 4 skipped`).
+
+Decisions:
+- Chose a new root-level script file (`DEMO_SCRIPT_LATENCY_STORY.md`) instead of embedding notes in `RUNBOOK.md`. Alternative considered: adding a runbook subsection only. The dedicated file is easier to present from directly while preserving RUNBOOK as an operational reference.
+- Explicitly included a "Do-Not-Claim" section for latency/dashboard statements. Alternative considered: only listing positive metrics. The explicit guardrails reduce risk during live Q&A and keep statements evidence-backed.
+
+Refs: `DEMO_SCRIPT_LATENCY_STORY.md:1-187`, `RUNBOOK.md:327`, `backend/benchmarks/results/benchmark_report.json:1-61`, `backend/main.py:208-210`, `frontend/src/useTutorSocket.ts:239`
+
+---
+
+## 2026-03-15 17:13
+
+What: Reconciled Phase 6 documentation in `README.md` and `RUNBOOK.md` so the repository story matches current behavior (Socrates VI identity, `MAX_TURNS=15` default, visual-teaching websocket contract, current env keys/providers, and browser/eval/benchmark command map). Also added a dedicated Phase 6 status row in `RUNBOOK.md`.
+
+Why: Submission docs had drifted from the shipped app and test tooling, creating evaluator confusion and risking mismatch between what the repo says and what the system actually does.
+
+How: Rewrote `README.md` into an evaluator-first guide with quick start, gates, and evidence locations; patched `RUNBOOK.md` environment setup, Playwright commands, manual E2E flow, and websocket protocol details (`session_restore`, `lesson_visual_update`, `session_complete`, `spatialreal_session_init`); then executed required full suites: `cd backend && source venv/bin/activate && pytest` (`347 passed, 1 skipped, 7 deselected`) and `cd frontend && npm test` (`163 passed, 4 skipped`).
+
+Decisions:
+- Chose a concise full README rewrite instead of incremental line edits. Alternative considered: preserving the older deep-dive structure and patching specific lines. Rewrite reduced doc drift risk and made evaluator onboarding faster.
+- Kept historical Feature Status rows in RUNBOOK and appended a new Phase 6 row. Alternative considered: pruning older milestone rows. Appending preserved chronology while still clearly marking current documentation state.
+
+Refs: `README.md:1-119`, `RUNBOOK.md:17-23`, `RUNBOOK.md:135`, `RUNBOOK.md:153-165`, `RUNBOOK.md:173-209`, `RUNBOOK.md:326`, `backend/main.py:276-336`, `frontend/src/useTutorSocket.ts:59-73`
