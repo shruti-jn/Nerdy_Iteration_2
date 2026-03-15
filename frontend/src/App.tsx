@@ -37,6 +37,10 @@ export function App() {
 
   // ── Avatar provider (set by backend in session_start) ────────────────────
   const [avatarProvider, setAvatarProvider] = useState<AvatarProvider>("simli");
+  // Ref mirrors state so WS callbacks (which fire before React re-renders)
+  // always read the latest value. State alone is stale inside closures that
+  // run synchronously after setAvatarProvider.
+  const avatarProviderRef = useRef<AvatarProvider>("simli");
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -88,11 +92,14 @@ export function App() {
     _useMock: IS_MOCK,
     onAvatarProvider: (provider) => {
       console.debug("[App] Avatar provider set to:", provider);
-      setAvatarProvider(provider);
+      avatarProviderRef.current = provider; // sync — available immediately to onSessionStart
+      setAvatarProvider(provider);          // async — triggers re-render
     },
     onSessionStart: () => {
       // SpatialReal: avatar init happens via onSpatialRealInit, not here
-      if (avatarProvider === "spatialreal") {
+      // Read from ref (not state) because this runs synchronously after onAvatarProvider
+      // before React has re-rendered with the new state value.
+      if (avatarProviderRef.current === "spatialreal") {
         console.debug("[App] onSessionStart — SpatialReal mode, waiting for spatialreal_session_init");
         return;
       }
@@ -147,7 +154,7 @@ export function App() {
       }
     },
     onAudioChunk: (pcm) => {
-      if (avatarProvider === "spatialreal") {
+      if (avatarProviderRef.current === "spatialreal") {
         // Forward TTS audio to SpatialReal SDK for lip-sync
         spatialReal.sendAudio(pcm.buffer as ArrayBuffer, false);
       } else {
@@ -335,9 +342,10 @@ export function App() {
     console.debug("[App] handleBack — disconnecting WS, resetting store");
     simliConnectingRef.current = false;
     srInitRef.current = null;
-    if (avatarProvider === "spatialreal") {
+    if (avatarProviderRef.current === "spatialreal") {
       spatialReal.dispose();
     }
+    avatarProviderRef.current = "simli";
     setAvatarProvider("simli"); // reset to default
     socket.disconnect();
     store.reset();

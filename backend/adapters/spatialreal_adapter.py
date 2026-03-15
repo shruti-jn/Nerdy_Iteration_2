@@ -26,8 +26,12 @@ from pipeline.metrics import MetricsCollector
 logger = logging.getLogger(__name__)
 
 # SpatialReal Console API (session token generation)
-_SPATIALREAL_BASE_URL = "https://console.spatialreal.com"
-_TOKEN_ENDPOINT = f"{_SPATIALREAL_BASE_URL}/v1/console/session-tokens"
+# Base URL is region-specific: console.{region}.spatialwalk.cloud
+_REGION_HOSTS = {
+    "us-west": "console.us-west.spatialwalk.cloud",
+    "ap-northeast": "console.ap-northeast.spatialwalk.cloud",
+}
+_TOKEN_PATH = "/v1/console/session-tokens"
 _TOKEN_REQUEST_TIMEOUT_S = 10.0
 
 
@@ -78,12 +82,24 @@ class SpatialRealAdapter(BaseAvatarAdapter):
             )
 
         try:
+            # Build region-specific endpoint URL
+            host = _REGION_HOSTS.get(self._region)
+            if not host:
+                raise ValueError(
+                    f"Unknown SpatialReal region '{self._region}'. "
+                    f"Supported: {', '.join(_REGION_HOSTS)}"
+                )
+            token_url = f"https://{host}{_TOKEN_PATH}"
+
+            # Token expires in 1 hour (max allowed: 24h)
+            import time
+            expire_at = int(time.time()) + 3600
+
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    _TOKEN_ENDPOINT,
+                    token_url,
                     json={
-                        "appId": self._app_id,
-                        "region": self._region,
+                        "expireAt": expire_at,
                     },
                     headers={
                         "Content-Type": "application/json",

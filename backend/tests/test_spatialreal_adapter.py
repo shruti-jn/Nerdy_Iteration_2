@@ -85,7 +85,9 @@ async def test_generate_session_token_success():
     # Verify the correct endpoint and headers were used
     call_kwargs = mock_client.post.call_args
     assert "session-tokens" in call_kwargs.args[0]
+    assert "us-west" in call_kwargs.args[0]  # region-specific host
     assert call_kwargs.kwargs["headers"]["X-Api-Key"] == "test-sr-key"
+    assert "expireAt" in call_kwargs.kwargs["json"]
 
 
 @pytest.mark.asyncio
@@ -198,9 +200,9 @@ async def test_generate_session_token_request_payload():
     with patch("adapters.spatialreal_adapter.httpx.AsyncClient", return_value=mock_client):
         await adapter.generate_session_token()
 
-    call_kwargs = mock_client.post.call_args.kwargs
-    assert call_kwargs["json"]["appId"] == "my-app"
-    assert call_kwargs["json"]["region"] == "ap-northeast"
+    call_kwargs = mock_client.post.call_args
+    assert "ap-northeast" in call_kwargs.args[0]  # region in URL host
+    assert "expireAt" in call_kwargs.kwargs["json"]
 
 
 # ---------------------------------------------------------------------------
