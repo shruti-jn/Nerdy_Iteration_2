@@ -815,7 +815,7 @@ def test_ws_session_restore_waits_for_continue_before_welcome_back(
             "topic": "photosynthesis",
             "current_step_id": 1,
             "visual_step_id": 1,
-            "revealed_elements": ["sunlight", "water", "roots"],
+            "revealed_elements": ["sunlight", "water"],
         },
         "turns_since_compression": 0,
         "updated_at": time.time(),
@@ -831,9 +831,9 @@ def test_ws_session_restore_waits_for_continue_before_welcome_back(
             assert visual_msg["type"] == "lesson_visual_update"
             assert visual_msg["step_id"] == 1
             assert visual_msg["step_label"] == "The Ingredients"
-            assert visual_msg["unlocked_elements"] == ["sunlight", "water", "roots"]
-            assert visual_msg["progress_completed"] == 3
-            assert visual_msg["progress_total"] == 10
+            assert visual_msg["unlocked_elements"] == ["sunlight", "water"]
+            assert visual_msg["progress_completed"] == 2
+            assert visual_msg["progress_total"] == 8
 
             ws.send_text(json.dumps({"type": "continue_lesson"}))
 

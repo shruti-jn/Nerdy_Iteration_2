@@ -194,28 +194,28 @@ _TOPIC_RECAPS: dict[str, VisualStep] = {
 _PHOTOSYNTHESIS_REVEAL_ORDER = (
     "sunlight",
     "water",
-    "roots",
     "carbon_dioxide",
     "leaf",
     "chloroplast",
     "chlorophyll",
     "sugar",
-    "fruit",
     "oxygen",
 )
 
 _PHOTOSYNTHESIS_REVEAL_LABELS = {
     "sunlight": "sunlight",
     "water": "water",
-    "roots": "roots",
     "carbon_dioxide": "carbon dioxide",
     "leaf": "leaf",
     "chloroplast": "chloroplast",
     "chlorophyll": "chlorophyll",
-    "sugar": "sugar",
-    "fruit": "fruit",
+    "sugar": "glucose",
     "oxygen": "oxygen",
 }
+
+_PHOTOSYNTHESIS_INPUTS = {"sunlight", "water", "carbon_dioxide"}
+_PHOTOSYNTHESIS_FACTORY = {"leaf", "chloroplast", "chlorophyll"}
+_PHOTOSYNTHESIS_OUTPUTS = {"sugar", "oxygen"}
 
 
 def _photosynthesis_revealed_elements(
@@ -252,19 +252,41 @@ def _join_labels(labels: list[str]) -> str:
 
 def _photosynthesis_caption(default_caption: str, revealed_elements: list[str], *, is_recap: bool) -> str:
     if is_recap:
-        return "The whole photosynthesis picture is visible now, from sunlight and roots all the way to sugar, fruit, and oxygen."
+        return (
+            "The full photosynthesis flow is visible now: ingredients go into the leaf factory, "
+            "and glucose plus oxygen come out."
+        )
 
     if not revealed_elements:
         return default_caption
 
+    revealed_set = set(revealed_elements)
     revealed_labels = [
         _PHOTOSYNTHESIS_REVEAL_LABELS[element]
         for element in revealed_elements
         if element in _PHOTOSYNTHESIS_REVEAL_LABELS
     ]
+    if not _PHOTOSYNTHESIS_INPUTS.issubset(revealed_set):
+        return (
+            f"You've started the recipe with {_join_labels(revealed_labels)}. "
+            "Keep looking for the ingredients that go into photosynthesis."
+        )
+
+    if not _PHOTOSYNTHESIS_FACTORY.issubset(revealed_set):
+        return (
+            "You found the ingredients. Next, uncover the leaf factory that uses them: "
+            "the leaf, chloroplast, and chlorophyll."
+        )
+
+    if not _PHOTOSYNTHESIS_OUTPUTS.issubset(revealed_set):
+        return (
+            "You mapped the inputs and the leaf factory. Next, reveal what comes out: "
+            "glucose for the plant and oxygen for the air."
+        )
+
     return (
-        f"The picture is filling in. So far you've uncovered {_join_labels(revealed_labels)}. "
-        "Keep looking for the other parts of how a plant makes food."
+        "You mapped the core flow of photosynthesis: ingredients in, chlorophyll-powered leaf factory, "
+        "glucose and oxygen out."
     )
 
 
@@ -327,7 +349,7 @@ def visual_to_message(
         message["progress_completed"] = len(unlocked_elements)
         message["progress_total"] = len(_PHOTOSYNTHESIS_REVEAL_ORDER)
         message["progress_label"] = (
-            f"Scene Pieces Unlocked: {len(unlocked_elements)}/{len(_PHOTOSYNTHESIS_REVEAL_ORDER)}"
+            f"Photosynthesis Clues: {len(unlocked_elements)}/{len(_PHOTOSYNTHESIS_REVEAL_ORDER)}"
         )
         message["caption"] = _photosynthesis_caption(
             visual.caption,

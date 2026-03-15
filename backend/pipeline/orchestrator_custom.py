@@ -20,7 +20,11 @@ from adapters.stt_adapter import DeepgramSTTAdapter
 from adapters.tts_adapter import CartesiaTTSAdapter, DeepgramTTSAdapter
 from observability.langfuse_setup import trace_generation, trace_span
 from pipeline.errors import TutorError
-from pipeline.lesson_progress import LessonProgressState, evaluate_lesson_progress
+from pipeline.lesson_progress import (
+    LessonProgressState,
+    describe_prompt_state,
+    evaluate_lesson_progress,
+)
 from pipeline.metrics import MetricsCollector
 from pipeline.orchestrator_protocol import Orchestrator
 from pipeline.sentence_buffer import SentenceBuffer
@@ -53,6 +57,7 @@ def _build_turn_hint(
     max_turns: int,
     progress: LessonProgressState,
     total_steps: int,
+    transcript: str = "",
 ) -> str:
     """Build the runtime hint injected ahead of the student transcript."""
     turn_hint = f"[Turn {turn_number} of {max_turns}]"
@@ -62,6 +67,23 @@ def _build_turn_hint(
             f"{turn_hint} This is the FINAL turn. Summarize what the student learned. "
             "Celebrate their progress. End with encouragement, not a question."
         )
+
+    prompt_state = describe_prompt_state(progress.topic, progress, transcript, total_steps)
+
+    turn_hint += (
+        " [LESSON STATE: "
+        f"CURRENT STEP={prompt_state['current_step_label']}; "
+        f"ACCEPTED SO FAR={prompt_state['accepted_so_far']}; "
+        f"ACCEPTED THIS TURN={prompt_state['accepted_this_turn']}; "
+        f"MISSING NOW={prompt_state['missing_current']}; "
+        f"DO NOT RE-ASK={prompt_state['do_not_reask']}; "
+        f"NEXT GOAL={prompt_state['next_goal']}] "
+        "Treat ACCEPTED SO FAR as ideas the student had already earned before this reply. "
+        "Treat ACCEPTED THIS TURN as new ideas from the latest student reply. "
+        "Answer uptake is mandatory: if the student says a correct idea in this turn, "
+        "name that exact idea in your first sentence before asking anything else. "
+        f"{prompt_state['bridge_guidance']} "
+    )
 
     if progress.current_scaffold_level == 1:
         turn_hint += (
@@ -243,7 +265,7 @@ class CustomOrchestrator:
             progress = self._ensure_lesson_progress(session)
             previous_visual_step = progress.visual_step_id
             total_steps = get_total_steps(self._topic)
-            turn_hint = _build_turn_hint(turn_number, self._max_turns, progress, total_steps)
+            turn_hint = _build_turn_hint(turn_number, self._max_turns, progress, total_steps, transcript)
 
             full_text = await self._stream_llm_response(
                 f"{turn_hint} {transcript}",

@@ -194,7 +194,7 @@ class TestVisualToMessage:
             vs,
             topic="photosynthesis",
             turn_number=5,
-            lesson_progress={"revealed_elements": ["sunlight", "water", "roots"]},
+            lesson_progress={"revealed_elements": ["sunlight", "water"]},
         )
         assert msg["type"] == "lesson_visual_update"
         assert msg["diagram_id"] == "photosynthesis"
@@ -203,13 +203,13 @@ class TestVisualToMessage:
         assert msg["total_steps"] == 7
         assert msg["turn_number"] == 5
         assert msg["is_recap"] is False
-        assert "sunlight, water, and roots" in msg["caption"]
+        assert "started the recipe with sunlight and water" in msg["caption"]
         assert msg["emoji_diagram"] == vs.emoji_diagram
         assert msg["highlight_keys"] == list(vs.highlight_keys)
-        assert msg["unlocked_elements"] == ["sunlight", "water", "roots"]
-        assert msg["progress_completed"] == 3
-        assert msg["progress_total"] == 10
-        assert msg["progress_label"] == "Scene Pieces Unlocked: 3/10"
+        assert msg["unlocked_elements"] == ["sunlight", "water"]
+        assert msg["progress_completed"] == 2
+        assert msg["progress_total"] == 8
+        assert msg["progress_label"] == "Photosynthesis Clues: 2/8"
 
     def test_recap_step(self):
         """Recap message has is_recap=True."""
@@ -256,17 +256,15 @@ class TestVisualToMessage:
             is_recap=True,
         )
 
-        assert msg["progress_completed"] == 10
-        assert msg["progress_total"] == 10
+        assert msg["progress_completed"] == 8
+        assert msg["progress_total"] == 8
         assert msg["unlocked_elements"] == [
             "sunlight",
             "water",
-            "roots",
             "carbon_dioxide",
             "leaf",
             "chloroplast",
             "chlorophyll",
             "sugar",
-            "fruit",
             "oxygen",
         ]

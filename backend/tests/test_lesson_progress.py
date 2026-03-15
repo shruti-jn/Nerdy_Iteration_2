@@ -1,4 +1,8 @@
-from pipeline.lesson_progress import LessonProgressState, evaluate_lesson_progress
+from pipeline.lesson_progress import (
+    LessonProgressState,
+    describe_prompt_state,
+    evaluate_lesson_progress,
+)
 
 
 def test_wrong_answer_does_not_advance_photosynthesis_hook():
@@ -59,7 +63,7 @@ def test_partial_ingredients_answer_does_not_advance():
 
     assert updated.current_step_id == 1
     assert updated.visual_step_id == 1
-    assert updated.failed_attempts_on_current_step == 1
+    assert updated.failed_attempts_on_current_step == 0
 
 
 def test_partial_photosynthesis_answer_reveals_found_scene_elements():
@@ -75,7 +79,23 @@ def test_partial_photosynthesis_answer_reveals_found_scene_elements():
 
     assert updated.current_step_id == 0
     assert updated.visual_step_id == 0
-    assert updated.revealed_elements == ["sunlight", "water", "roots"]
+    assert updated.revealed_elements == ["sunlight", "water"]
+
+
+def test_rich_answer_can_bridge_one_adjacent_step():
+    state = LessonProgressState(topic="photosynthesis", current_step_id=0, visual_step_id=0)
+
+    updated = evaluate_lesson_progress(
+        "photosynthesis",
+        transcript="Plants need sunlight, water, and carbon dioxide from the air.",
+        step_hint=1,
+        state=state,
+        total_steps=7,
+    )
+
+    assert updated.current_step_id == 2
+    assert updated.visual_step_id == 2
+    assert updated.revealed_elements == ["sunlight", "water", "carbon_dioxide"]
 
 
 def test_revealed_scene_elements_accumulate_across_turns():
@@ -83,7 +103,7 @@ def test_revealed_scene_elements_accumulate_across_turns():
         topic="photosynthesis",
         current_step_id=0,
         visual_step_id=0,
-        revealed_elements=["sunlight", "water", "roots"],
+        revealed_elements=["sunlight", "water"],
     )
 
     updated = evaluate_lesson_progress(
@@ -94,7 +114,72 @@ def test_revealed_scene_elements_accumulate_across_turns():
         total_steps=7,
     )
 
-    assert updated.revealed_elements == ["sunlight", "water", "roots", "carbon_dioxide"]
+    assert updated.revealed_elements == ["sunlight", "water", "carbon_dioxide"]
+
+
+def test_final_missing_ingredient_advances_from_accumulated_progress():
+    state = LessonProgressState(
+        topic="photosynthesis",
+        current_step_id=1,
+        visual_step_id=1,
+        revealed_elements=["sunlight", "carbon_dioxide"],
+    )
+
+    updated = evaluate_lesson_progress(
+        "photosynthesis",
+        transcript="Water.",
+        step_hint=1,
+        state=state,
+        total_steps=7,
+    )
+
+    assert updated.current_step_id == 2
+    assert updated.visual_step_id == 2
+    assert updated.failed_attempts_on_current_step == 0
+
+
+def test_partial_correct_answer_does_not_escalate_failed_attempts():
+    state = LessonProgressState(
+        topic="photosynthesis",
+        current_step_id=1,
+        visual_step_id=1,
+        failed_attempts_on_current_step=2,
+        revealed_elements=["carbon_dioxide"],
+    )
+
+    updated = evaluate_lesson_progress(
+        "photosynthesis",
+        transcript="Sunlight.",
+        step_hint=1,
+        state=state,
+        total_steps=7,
+    )
+
+    assert updated.current_step_id == 1
+    assert updated.visual_step_id == 1
+    assert updated.failed_attempts_on_current_step == 0
+
+
+def test_prompt_state_remembers_partial_ingredients_from_prior_turns():
+    progress = LessonProgressState(
+        topic="photosynthesis",
+        current_step_id=1,
+        visual_step_id=1,
+        revealed_elements=["sunlight", "carbon_dioxide"],
+    )
+
+    prompt_state = describe_prompt_state(
+        "photosynthesis",
+        progress,
+        transcript="Water.",
+        total_steps=7,
+    )
+
+    assert prompt_state["accepted_so_far"] == "carbon dioxide, sunlight"
+    assert prompt_state["accepted_this_turn"] == "water"
+    assert prompt_state["missing_current"] == "none yet"
+    assert prompt_state["do_not_reask"] == "carbon dioxide, sunlight, water"
+    assert "completes this checkpoint" in prompt_state["bridge_guidance"]
 
 
 def test_failed_attempts_increment_for_stuck_response():
