@@ -231,7 +231,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Topic selection (frontend) | ✅ Done | 6-card grid: Photosynthesis + Newton's Laws active; 4 "Coming Soon" stubs |
 | Topic selection (backend) | ✅ Done | `GET /topics` endpoint; `?topic=` WS query param with validation |
 | Auto-greeting (tutor-greeting mode) | ✅ Done | `start_lesson` → LLM greeting → TTS → `greeting_complete`; Turn 0 freebie; mic enables after |
-| Getting Ready view + avatar fallback | ✅ Done | Progress stepper; Start button enables on WS+avatar; immediate fallback on error, 10s timeout for connecting |
+| Getting Ready view + avatar fallback | ✅ Done | Progress stepper; Start/Continue entry for resumable lessons; immediate fallback on error, 10s timeout for connecting |
 | Shared `_stream_llm_response()` helper | ✅ Done | DRY extraction from `_handle_turn`; reused by `_handle_greeting` |
 | Orchestrator refactor | ✅ Done | main.py delegates to CustomOrchestrator; VAD wired; test_ws_end_of_utterance_pipeline skipped (TestClient hang) |
 | Test gate taxonomy (unit/contract/browser-e2e/live-canary) | ✅ Done | See TEST_GATES.md; backend contract marker + RUNBOOK command map |
@@ -250,8 +250,9 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Teach-Back phase | ✅ Done | Turns 13-14: student explains concept back; triggered by `[TEACH-BACK PHASE]` turn hint |
 | Boredom detection / Cool Fact pivots | ✅ Done | "idk"/"boring"/short answers → Gross or Cool Fact from topic scaffold |
 | Kid-culture analogies | ✅ Done | Minecraft, phone charging, smoothie analogies woven into prompts |
-| Session persistence (reconnect) | ✅ Done | localStorage session ID + backend in-memory dict with JSON backup; 1hr TTL |
-| Tutor identity: Socrates 6 | ✅ Done | Renamed from "Nova" across prompts, greeting, and frontend hints |
+| Session persistence (reconnect) | ✅ Done | localStorage stores session/topic/avatar; only same-topic + same-avatar sessions can continue; restore sends welcome-back + repeated last prompt |
+| Tutor identity: Socrates VI | ✅ Done | Tutor name updated across prompts, greeting copy, lesson UI, and conversation labels |
+| Tutor speech pronunciation alias | ✅ Done | TTS-only normalization rewrites `Socrates VI` to `Socrates Six` before provider synthesis so spoken audio says "Six" while UI and transcripts stay unchanged |
 | Scorer: Teacher Mode aware | ✅ Done | `score_no_direct_answer()` accepts `teacher_mode` flag; backward compatible |
 | SessionManager serialization | ✅ Done | `to_dict()` / `from_dict()` for session persistence and crash recovery |
 | TTS no-word text guard | ✅ Done | Cartesia rejects punctuation-only text with 400; replaced fragile regex with alphanumeric presence check |

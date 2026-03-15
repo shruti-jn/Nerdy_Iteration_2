@@ -209,6 +209,26 @@ class TestCartesiaTTSAdapterStream:
         )
 
     @pytest.mark.asyncio
+    async def test_normalizes_brand_name_for_tts_only(self):
+        """stream() aliases the tutor brand for speech synthesis."""
+        settings = _FakeSettings(cartesia_voice_id="my-voice-id")
+        adapter = CartesiaTTSAdapter(settings)
+        mc = MetricsCollector()
+
+        mock_sse = AsyncMock(return_value=_make_stream(b"\x00"))
+        adapter._client.tts.generate_sse = mock_sse
+
+        async for _ in adapter.stream("Hi, I am Socrates VI.", mc):
+            pass
+
+        mock_sse.assert_called_once_with(
+            model_id="sonic-3",
+            transcript="Hi, I am Socrates Six.",
+            voice={"id": "my-voice-id", "mode": "id"},
+            output_format={"container": "raw", "encoding": "pcm_s16le", "sample_rate": 16000},
+        )
+
+    @pytest.mark.asyncio
     async def test_cancel_is_idempotent(self):
         """cancel() can be called multiple times without error."""
         adapter = CartesiaTTSAdapter(_FakeSettings())

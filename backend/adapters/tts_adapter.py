@@ -32,6 +32,11 @@ from pipeline.errors import AdapterError
 from pipeline.metrics import MetricsCollector
 
 
+def _normalize_tts_text(sentence: str) -> str:
+    """Apply speech-only aliases without changing visible transcript text."""
+    return sentence.replace("Socrates VI", "Socrates Six")
+
+
 class DeepgramTTSAdapter(BaseTTSAdapter):
     """Deepgram Aura-backed TTS adapter for streaming audio synthesis.
 
@@ -73,12 +78,13 @@ class DeepgramTTSAdapter(BaseTTSAdapter):
             return
 
         self._cancel_event.clear()
+        tts_text = _normalize_tts_text(sentence)
 
         try:
             metrics.start("tts")
             # generate() returns an async generator (not a coroutine)
             audio_stream = self._client.speak.v1.audio.generate(
-                text=sentence,
+                text=tts_text,
                 model=self._model,
                 encoding="linear16",
                 container="none",
@@ -163,13 +169,14 @@ class CartesiaTTSAdapter(BaseTTSAdapter):
             return
 
         self._cancel_event.clear()
+        tts_text = _normalize_tts_text(sentence)
 
         try:
             metrics.start("tts")
             t0 = time.monotonic_ns()
             stream = await self._client.tts.generate_sse(
                 model_id="sonic-3",
-                transcript=sentence,
+                transcript=tts_text,
                 voice={"id": self._voice_id, "mode": "id"},
                 output_format={
                     "container": "raw",

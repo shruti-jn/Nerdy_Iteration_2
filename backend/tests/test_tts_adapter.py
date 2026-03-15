@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from adapters.tts_adapter import DeepgramTTSAdapter
+from adapters.tts_adapter import DeepgramTTSAdapter, _normalize_tts_text
 from pipeline.errors import AdapterError
 from pipeline.metrics import MetricsCollector
 
@@ -179,11 +179,37 @@ class TestDeepgramTTSAdapterStream:
         )
 
     @pytest.mark.asyncio
+    async def test_normalizes_brand_name_for_tts_only(self):
+        """stream() aliases the tutor brand for speech synthesis."""
+        adapter = DeepgramTTSAdapter(_FakeSettings())
+        mc = MetricsCollector()
+
+        mock_generate = MagicMock(return_value=_mock_audio_stream(b"\x00"))
+        adapter._client.speak.v1.audio.generate = mock_generate
+
+        async for _ in adapter.stream("Hi, I am Socrates VI.", mc):
+            pass
+
+        mock_generate.assert_called_once_with(
+            text="Hi, I am Socrates Six.",
+            model="aura-2-asteria-en",
+            encoding="linear16",
+            container="none",
+            sample_rate=16000,
+        )
+
+    @pytest.mark.asyncio
     async def test_cancel_is_idempotent(self):
         """cancel() can be called multiple times without error."""
         adapter = DeepgramTTSAdapter(_FakeSettings())
         await adapter.cancel()
         await adapter.cancel()  # Should not raise
+
+
+def test_normalize_tts_text_only_aliases_tutor_brand():
+    """Normalization rewrites the spoken tutor name without touching other numerals."""
+    assert _normalize_tts_text("Socrates VI") == "Socrates Six"
+    assert _normalize_tts_text("Chapter VI starts now.") == "Chapter VI starts now."
 
 
 # ---------------------------------------------------------------------------
