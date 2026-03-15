@@ -1252,3 +1252,13 @@ What: Triggered a production deploy from `main` after verifying the avatar readi
 Why: The user requested that the current avatar fixes be live on production, and merging the older avatar fix branch directly into `main` would have risked overwriting newer committed work that already contains those fixes.
 
 How: Compared `origin/main` against the avatar-fix branch in a clean clone, confirmed the relevant runtime fixes were already on `main`, appended this deployment note, and pushed to `main` to kick off the existing GitHub Actions Fly.io deployment pipeline.
+
+---
+
+## 2026-03-15 16:49
+
+What: Created a fresh `main` commit to trigger deployment after enabling Fly.io auto-deploy from GitHub.
+
+Why: The repository is now configured to deploy on pushes to `main`, so a clean push was needed to kick the updated deployment path.
+
+How: Used a clean temporary checkout of `main`, appended this `BUILD_SUMMARY.md` entry, and pushed the commit to GitHub so Fly/GitHub automation can pick it up without including unrelated local workspace files.
