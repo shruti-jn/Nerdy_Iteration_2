@@ -21,6 +21,7 @@ import logging
 import os
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -28,6 +29,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from adapters.avatar_adapter import SimliAvatarAdapter
 from adapters.llm_engine import GroqLLMEngine
 from config import settings
+from observability.langfuse_setup import init_langfuse, shutdown_langfuse
 from pipeline.orchestrator_custom import CustomOrchestrator
 from pipeline.session_manager import SessionManager
 from pipeline.session_store import SessionStore
@@ -48,7 +50,16 @@ logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handle
 
 # ── FastAPI app ─────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Live AI Video Tutor", version="0.1.0")
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """FastAPI lifespan: initialize on startup, clean up on shutdown."""
+    # Startup
+    init_langfuse(settings)
+    yield
+    # Shutdown
+    shutdown_langfuse()
+
+app = FastAPI(title="Live AI Video Tutor", version="0.1.0", lifespan=_lifespan)
 
 # Track active sessions for the /ready endpoint and concurrency control
 active_sessions: set[str] = set()
@@ -297,3 +308,15 @@ async def _send_json(ws: WebSocket, data: dict) -> None:
         await ws.send_text(json.dumps(data))
     except Exception as exc:
         logger.warning("ws_send_failed type=%s error=%s", data.get("type", "?"), exc)
+
+
+# ── Static file serving (production) ───────────────────────────────────────
+# In production the frontend Vite build is copied into ./static/ by the
+# Dockerfile. StaticFiles(html=True) serves index.html for directory
+# requests (SPA root). Mounted AFTER all routes so API endpoints take
+# priority (Starlette checks @app routes before mounts).
+
+_STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_STATIC_DIR):
+    from starlette.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="spa")

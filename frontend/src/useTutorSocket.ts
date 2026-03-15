@@ -95,7 +95,12 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/session${qs}`;
   }, [opts.serverUrl, opts.topicId]);
 
-  const serverUrl = buildServerUrl();
+  // Store the URL in a ref so `connect` doesn't depend on the string value.
+  // Without this, connect's identity changes when session_id enters localStorage
+  // (after session_start), triggering the main effect to disconnect + reconnect,
+  // which destroys the working Simli PeerConnection.
+  const serverUrlRef = useRef('');
+  serverUrlRef.current = buildServerUrl();
 
   // Audio playback — play each chunk immediately as it arrives (no buffering)
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -328,8 +333,15 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         console.error(ts(), "[TutorSocket] Server error:", msg.code, msg.message);
         // Simli errors don't affect session mode — the student can still
         // talk to the tutor; only the avatar video is unavailable.
-        // Greeting errors are handled by greeting_complete fallback.
-        if (!isSimliError && msg.code !== "GREETING_FAILED") {
+        if (isSimliError) {
+          // Don't change mode — student can still use the tutor without avatar
+        } else if (msg.code === "GREETING_FAILED") {
+          // Greeting failed — surface error and reset mode so UI isn't stuck.
+          // The backend does NOT send greeting_complete on failure, so we
+          // must reset mode here ourselves.
+          store.setError(msg.message ?? "Greeting failed. Please go back and try again.");
+          store.setMode("idle");
+        } else {
           store.setMode("idle");
         }
       }
@@ -352,7 +364,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
     if (wsRef.current && connectedRef.current) return;
 
-    const ws = new WebSocket(serverUrl);
+    const ws = new WebSocket(serverUrlRef.current);
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 
@@ -402,7 +414,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       if (wsRef.current !== ws) return;
       connectedRef.current = false;
     };
-  }, [serverUrl, handleMessage]);
+  }, [handleMessage]);
 
   const disconnect = useCallback(() => {
     manualDisconnectRef.current = true;
@@ -517,7 +529,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       disconnect();
       return;
     }
-    console.debug(ts(), "[TutorSocket] enabled=true — connecting to", serverUrl);
+    console.debug(ts(), "[TutorSocket] enabled=true — connecting to", serverUrlRef.current);
     connect();
     return () => disconnect();
   }, [connect, disconnect, opts.enabled]);

@@ -18,6 +18,7 @@ from adapters.avatar_adapter import SimliAvatarAdapter
 from adapters.llm_engine import GroqLLMEngine
 from adapters.stt_adapter import DeepgramSTTAdapter
 from adapters.tts_adapter import CartesiaTTSAdapter, DeepgramTTSAdapter
+from observability.langfuse_setup import trace_generation, trace_span
 from pipeline.errors import TutorError
 from pipeline.metrics import MetricsCollector
 from pipeline.orchestrator_protocol import Orchestrator
@@ -62,6 +63,7 @@ class CustomOrchestrator:
         self._simli: SimliAvatarAdapter | None = None
         self._vad = VADHandler()
         self._last_metrics: dict = {}
+        self._topic: str = ""
 
         # Register cancel callbacks for interrupt (barge-in)
         self._vad.register_cancel_callback("llm", self._llm.cancel)
@@ -128,6 +130,7 @@ class CustomOrchestrator:
         stt_finish_ms = (time.monotonic_ns() - t0) / 1_000_000
 
         if not transcript.strip():
+            self._vad.cancel_listening()
             mc.end_turn()
             self._last_metrics = mc.to_dict()
             return
@@ -143,6 +146,17 @@ class CustomOrchestrator:
         mc.start_turn()
         turn_number = session.turn_count + 1
         self._vad.start_processing()
+
+        # Langfuse: trace the LLM processing portion of the turn
+        finish_trace = trace_span(
+            f"turn-{turn_number}",
+            metadata={
+                "session_id": self._session_id,
+                "turn_number": turn_number,
+                "topic": self._topic,
+                "transcript": transcript[:200],
+            },
+        )
 
         try:
             context = session.get_context()
@@ -232,6 +246,8 @@ class CustomOrchestrator:
             })
             if self._vad.state == "speaking":
                 self._vad.finish_speaking()
+        finally:
+            finish_trace()
 
     async def _stream_llm_response(
         self,
@@ -245,6 +261,19 @@ class CustomOrchestrator:
         use_vad: if True, drive VAD state (speaking); set False for greeting (no listening phase).
         """
         logger.debug("_stream_llm_response session_id=%s label=%s input_len=%d context_len=%d", self._session_id, label, len(user_input), len(context))
+
+        # Langfuse: trace the LLM generation (nests under parent turn span)
+        messages = list(context) + [{"role": "user", "content": user_input}]
+        finish_gen = trace_generation(
+            f"llm_stream_{label}",
+            model=self._llm._default_model,
+            input=messages,
+            model_parameters={
+                "temperature": 0.7,
+                "max_tokens": self._llm._max_tokens,
+            },
+        )
+
         token_stream = self._llm.stream(user_input, context, mc)
         sentence_buffer = SentenceBuffer()
         full_text = ""
@@ -299,7 +328,9 @@ class CustomOrchestrator:
         if self._simli is not None and avatar_started:
             mc.end("avatar")
 
-        return full_text.strip()
+        result = full_text.strip()
+        finish_gen(output=result)
+        return result
 
     async def handle_interrupt(self, session: SessionManager) -> None:
         """Handle barge-in: cancel STT/LLM/TTS and stop avatar."""
@@ -340,6 +371,18 @@ class CustomOrchestrator:
     async def handle_greeting(self, session: SessionManager, topic: str) -> None:
         """Generate and stream the tutor greeting (Turn 0). Does not count toward max_turns."""
         logger.debug("handle_greeting_start session_id=%s topic=%s simli=%s", self._session_id, topic, self._simli is not None)
+        self._topic = topic
+
+        # Langfuse: trace the greeting as a top-level span
+        finish_trace = trace_span(
+            "greeting",
+            metadata={
+                "session_id": self._session_id,
+                "topic": topic,
+                "turn_number": 0,
+            },
+        )
+
         mc = MetricsCollector()
         mc.start_turn()
         try:
@@ -380,4 +423,5 @@ class CustomOrchestrator:
                 "code": "GREETING_FAILED",
                 "message": str(exc),
             })
-            await self._send_json({"type": "greeting_complete"})
+        finally:
+            finish_trace()

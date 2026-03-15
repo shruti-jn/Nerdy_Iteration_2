@@ -122,13 +122,22 @@ class TestInvalidTransitions:
         with pytest.raises(ValueError, match="idle.*idle"):
             handler.finish_speaking()
 
-    def test_listening_finish_speaking_raises(self):
+    def test_listening_cancel_returns_to_idle(self):
+        """cancel_listening() transitions from LISTENING back to IDLE."""
         from pipeline.vad_handler import VADHandler
 
         handler = VADHandler()
         handler.start_listening()
-        with pytest.raises(ValueError, match="listening.*idle"):
-            handler.finish_speaking()
+        handler.cancel_listening()
+        assert handler.state == "idle"
+
+    def test_cancel_listening_from_idle_raises(self):
+        """cancel_listening() from IDLE is invalid."""
+        from pipeline.vad_handler import VADHandler
+
+        handler = VADHandler()
+        with pytest.raises(ValueError, match="idle.*idle"):
+            handler.cancel_listening()
 
 
 # ── Interrupt Behaviour ──────────────────────────────────────────────────

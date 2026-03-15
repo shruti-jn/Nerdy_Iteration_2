@@ -777,3 +777,107 @@ Decisions:
 Refs:
 - `backend/adapters/avatar_adapter.py:262-284,318-350,176-186`
 - `backend/tests/test_avatar_adapter.py:448-455`
+
+## 2026-03-14 15:30
+
+What: Fix GREETING_FAILED Cartesia TTS error and Simli reconnect race condition
+
+Why:
+1. **GREETING_FAILED**: Cartesia TTS rejected text fragments containing only punctuation (e.g. `"?"`, `""``) with HTTP 400 "Your transcript is empty or contains only punctuation." The SentenceBuffer's time-based flush could yield punctuation-only fragments, and the existing regex filter (`re.fullmatch(r'[\s.!?,;:\-—…""\'()]+', sentence)`) missed edge cases like lone quotation marks, mixed Unicode, or unusual spacing.
+2. **Simli reconnect race**: React StrictMode sends two `simli_sdp_offer` messages in quick succession. The first Simli session would connect, then StrictMode tears it down, and the second attempt would fail because: (a) `connect()` didn't clean up the previous WebSocket, leaving an orphaned connection with a running keepalive task, and (b) Simli may reject concurrent sessions for the same face_id before the first session's resources are fully released.
+
+How:
+1. **TTS validation** (`backend/adapters/tts_adapter.py:157-160`): Replaced the fragile punctuation-character-set regex with a simple alphanumeric presence check: `if not re.search(r'[a-zA-Z0-9]', sentence)`. This catches ALL non-word text regardless of which punctuation/symbol characters are present.
+2. **Simli reconnect cleanup** (`backend/adapters/avatar_adapter.py:175-179`): Added cleanup at the start of `connect()` — if there's an existing WebSocket or the adapter is marked ready, call `disconnect()` first. This ensures the old Simli session (WebSocket + keepalive task) is fully torn down before creating a new one.
+3. **Verified in browser**: Greeting renders correctly ("Hey, I'm Socrates 6!"), turn counter shows 0/15, no GREETING_FAILED errors. Avatar fallback ("Start without avatar") works when Simli times out.
+
+Decisions:
+- **Alphanumeric check over expanded regex**: Instead of adding more punctuation characters to the regex (which is a losing game — there are thousands of Unicode symbols), check for the presence of at least one letter or digit. If the text has no alphanumeric characters, it can't be meaningful speech. Simpler, more robust, zero false negatives.
+- **Cleanup in `connect()` vs. `main.py`**: Put the cleanup in the adapter's `connect()` method rather than in the `main.py` SDP handler. This makes the adapter self-cleaning — any caller gets correct behavior without remembering to disconnect first. The message loop in `main.py` is sequential, so there's no concurrency risk.
+
+Refs:
+- `backend/adapters/tts_adapter.py:157-160`
+- `backend/adapters/avatar_adapter.py:170-179`
+
+---
+
+### Fix: greeting error handling, VAD state machine, and avatar ready state
+
+What:
+Fixed three interconnected bugs: (1) backend sent `greeting_complete` even after `GREETING_FAILED`, leaving sessions in a broken state with mic enabled but no greeting played; (2) VAD state machine got stuck in `listening` after empty STT transcripts, causing `Invalid transition: 'listening' → 'listening'` errors that blocked all subsequent turns; (3) frontend declared avatar "Ready!" on WebRTC track receipt before the video actually started rendering.
+
+Why:
+Users experienced frozen avatars and non-functional audio after greeting failures. The root cause was a cascade: (a) Cartesia TTS rejected empty/punctuation-only greeting text with HTTP 400, (b) the orchestrator's `except` block still sent `greeting_complete`, (c) the frontend's `greeting_complete` handler overrode the error state and enabled the mic, leaving the session in an inconsistent state. Separately, empty STT results left the VAD in `listening` state, and the avatar "Ready!" checkmark appeared before video playback began.
+
+How:
+1. **Backend `handle_greeting` error path**: Removed the unconditional `greeting_complete` from the `except` block in `orchestrator_custom.py:375-383`. On error, only the `GREETING_FAILED` error message is sent — the frontend handles mode reset.
+2. **VAD `listening → idle` transition**: Added `cancel_listening()` method to `VADHandler` and allowed `listening → idle` in the transition table. Called in `handle_turn` when STT returns an empty transcript, resetting the state machine cleanly.
+3. **Frontend `GREETING_FAILED` handling**: Updated `useTutorSocket.ts` error handler to set `mode("idle")` and surface the error message for `GREETING_FAILED`, since the backend no longer sends `greeting_complete` as a fallback.
+4. **Avatar ready state**: Moved `setAvatarState("live")` from the `onStream` callback (fires on track receipt) to a `handleVideoPlaying` callback. This uses `requestVideoFrameCallback` (with `videoWidth > 0` dimension check) to wait until the browser has decoded an actual video frame before declaring the avatar live.
+5. **Test fixes**: Updated `test_vad_handler.py` to test the new `cancel_listening()` transition. Fixed `mic-pipeline.test.tsx` to use the last WS instance instead of the first (pre-existing flaky test where early instances are closed during view transitions).
+6. Verified in browser: getting-ready view shows shimmer placeholder until video frames arrive at 512x512; all three progress steps transition correctly; backend logs clean.
+
+Decisions:
+- **Remove `greeting_complete` on error vs. add a flag**: Chose removal — sending a "complete" signal after a failure is semantically wrong. The frontend should treat `GREETING_FAILED` as a terminal error for the greeting phase and reset mode itself. This is cleaner than adding a `success: false` flag to `greeting_complete`.
+- **`cancel_listening()` method vs. direct state reset**: Added a named method with proper transition validation rather than a raw `_state = "idle"` assignment. This maintains the state machine's invariant enforcement — `cancel_listening()` from any state other than `listening` still raises `ValueError`.
+- **`requestVideoFrameCallback` + dimension check vs. `playing` event alone**: The `playing` event fires when the media pipeline starts, which can be before actual video frames are decoded. `requestVideoFrameCallback` fires when a frame is about to be composited, and the `videoWidth > 0` check confirms the decoder has produced output. Falls back to RAF-based dimension polling when `requestVideoFrameCallback` isn't available.
+
+Refs:
+- `backend/pipeline/orchestrator_custom.py:375-383`
+- `backend/pipeline/vad_handler.py:26-31,96-104`
+- `backend/pipeline/orchestrator_custom.py:130-134`
+- `frontend/src/useTutorSocket.ts:328-340`
+- `frontend/src/App.tsx:115-159`
+- `frontend/src/components/GettingReadyView.tsx:7,15,62`
+- `backend/tests/test_vad_handler.py:125-140`
+- `frontend/src/mic-pipeline.test.tsx:208-210`
+
+---
+
+### Fix: Vite proxy IPv6 resolution hitting Docker container instead of backend
+
+- **What:** Changed all Vite proxy targets in `frontend/vite.config.ts` from `localhost` to `127.0.0.1` (4 HTTP proxies + 1 WebSocket proxy).
+- **Why:** A Docker container was also listening on port 8000 via IPv6. When Vite's proxy resolved `localhost`, Node.js preferred the IPv6 address (`::1`), routing WebSocket connections to the Docker container instead of the Python backend. This caused every WebSocket upgrade to fail, producing a reconnection loop flood in the browser console.
+- **How:** Replaced `localhost` → `127.0.0.1` in all proxy targets to force IPv4 resolution. Verified in browser: WebSocket connects, all three GettingReadyView steps (Connecting, Loading avatar, Ready) show green checkmarks. All tests pass (120 frontend, 276 backend).
+- **Decisions:** Used `127.0.0.1` (explicit IPv4 loopback) rather than trying to fix the Docker container conflict or bind the backend to IPv6 — this is the simplest, most reliable fix since the backend binds IPv4 only.
+- **Refs:** `frontend/vite.config.ts:8-15`
+
+---
+
+### Fix: Avatar connection destroyed by serverUrl-triggered WebSocket reconnect
+
+- **What:** Fixed a dependency chain bug in `useTutorSocket.ts` that caused a second WebSocket to open ~5s after the first, destroying the working Simli PeerConnection. Added defense-in-depth guard in `App.tsx` and wired up `onClose` callback.
+- **Why:** When `session_start` arrived, the handler stored `session_id` in localStorage and updated store state (triggering re-render). On re-render, `buildServerUrl()` produced a different URL (now including `&session_id=...`). Since `connect` depended on `serverUrl`, it got a new identity, causing the main effect to `disconnect()` → `connect()` with a new WebSocket. This second WS fired `onSessionStart` again, which called `simliRtc.connect()` — destroying the working PeerConnection. The second Simli handshake timed out (API rate-limiting), leaving the avatar dead.
+- **How:**
+  1. **Root cause fix** (`useTutorSocket.ts`): Replaced `const serverUrl = buildServerUrl()` with a ref (`serverUrlRef`). `connect` now reads from the ref instead of closing over the string, removing `serverUrl` from its dependency array. `connect` is now stable after initial render — effect won't re-run when localStorage changes.
+  2. **Defense in depth** (`App.tsx`): Added `simliConnectingRef` guard to `onSessionStart` — skips if Simli is already connecting or connected. Reset in `handleBack`, `handleAvatarRetry`, `onSimliError`, and `onClose`.
+  3. **Cleanup** (`App.tsx`): Wired up `onClose` callback to `useSimliWebRTC` to reset `simliConnectingRef` when PeerConnection closes.
+  4. **Regression test** (`mic-pipeline.test.tsx`): Tightened WS instance count assertion from `toBeGreaterThanOrEqual(1)` to `toBe(1)`.
+  5. Verified in browser: exactly ONE `WS open`, clean Simli handshake, avatar live (512x512), no errors. Lesson view shows avatar video with greeting.
+- **Decisions:** Used a ref instead of moving URL computation inside `connect()` — ref approach keeps the URL always up-to-date (including for auto-reconnect paths) while preventing `connect` identity changes. The `simliConnectingRef` guard is deliberately separate from `avatarState` to avoid visual flashes during stale PC cleanup.
+- **Refs:** `frontend/src/useTutorSocket.ts:98-102,367,417,532`, `frontend/src/App.tsx:38-40,69-75,100,250,310,175-178`, `frontend/src/mic-pipeline.test.tsx:207-209`
+
+## 2026-03-15 — Latency panel tooltips
+What: Added hover tooltips to each latency panel cell (STT, LLM, TTS, TOTAL) explaining what each metric measures.
+Why: Users reported that the three stage values don't add up to TOTAL; tooltips clarify that STT/LLM/TTS are time-to-first metrics and TOTAL is full turn wall-clock.
+How: Introduced `StageKey` type and `TOOLTIPS` record in `LatencyPanel.tsx`; applied `title` and `aria-label` to each `.latency-panel__cell`; added `cursor: help` in `LatencyPanel.css`. All 120 frontend tests pass.
+Refs: `frontend/src/components/LatencyPanel.tsx`, `frontend/src/components/LatencyPanel.css`
+
+## 2026-03-15 — Langfuse Cloud integration + Fly.io deployment infrastructure
+
+What: Integrated Langfuse v4 for LLM observability (tracing every LLM call with input/output/timing/usage) and created full Fly.io deployment infrastructure (Dockerfile, fly.toml, .dockerignore, static file serving).
+
+Why: Production deployment requires containerized build serving both frontend and backend from a single origin. LLM observability via Langfuse enables monitoring of every Groq call (streaming `stream()` and non-streaming `quick_call()`) with token counts, latency, and conversation context.
+
+How:
+- **Langfuse integration**: Created `backend/observability/langfuse_setup.py` with singleton client, `trace_span()` and `trace_generation()` helpers that return `finish()` callables (avoids context manager nesting). Instrumented `GroqLLMEngine.quick_call()` with Langfuse generation (input/output/model/usage). Instrumented `CustomOrchestrator.handle_turn()` and `handle_greeting()` with per-turn trace spans, and `_stream_llm_response()` with LLM generation tracing. Added Langfuse config fields to `config.py` and lifecycle hooks (init/shutdown) to `main.py` via modern `@asynccontextmanager` lifespan pattern.
+- **Fly.io deployment**: Multi-stage Dockerfile (Node 18 alpine for frontend build → Python 3.11 slim for backend + static assets). `fly.toml` with shared-cpu-1x/512MB, health check on `/health`, auto-stop/auto-start for cost efficiency. Static file serving via `StaticFiles(directory="static", html=True)` mounted at `/` after all API routes (conditional — only when `static/` dir exists).
+- **TypeScript fixes**: Fixed two pre-existing `tsc` errors in `App.tsx` that surfaced during Docker build: added `isConnected` to `simliRtcRef` type, changed `requestVideoFrameCallback` check from `in` operator to `typeof` to avoid type narrowing to `never`.
+- All 276 backend tests and 120 frontend tests pass. Docker image builds successfully.
+
+Decisions:
+- **Single container vs. separate services**: Chose single container serving frontend static build from FastAPI. Pros: no CORS issues (same origin), WebSocket connects to same host automatically, simpler ops. Cons: can't scale frontend/backend independently (not needed at current scale).
+- **Langfuse helper pattern (finish callables) vs. context managers**: Chose `finish()` callables returned from `trace_span()`/`trace_generation()`. Pros: avoids deep `with` nesting in orchestrator methods, cleaner `try/finally` pattern. Cons: slightly unconventional. Alternative was raw `with` blocks which caused 3-4 levels of indentation.
+- **Langfuse v4 SDK pattern**: Used `start_as_current_observation()` context managers + `update_current_generation()` — the v4 API replaced v2's `trace()`/`generation()` methods with OpenTelemetry-based context propagation.
+
+Refs: `backend/observability/langfuse_setup.py:1-82`, `backend/adapters/llm_engine.py:24,107-151`, `backend/pipeline/orchestrator_custom.py:1-15,55-70,120-140`, `backend/config.py:40-42`, `backend/main.py:32-33,53-61,319-322`, `Dockerfile:1-36`, `fly.toml:1-32`, `.dockerignore:1-47`, `frontend/src/App.tsx:62,230-240`

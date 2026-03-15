@@ -168,6 +168,15 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
             AdapterError: On timeout, connection failure, or protocol error.
         """
         try:
+            # Clean up any previous connection before creating a new one.
+            # This handles React StrictMode double-invokes where connect()
+            # is called twice in quick succession — without cleanup, the
+            # first Simli session stays alive and may cause Simli to reject
+            # the second session for the same face_id.
+            if self._ws is not None or self._ready:
+                logger.info("Simli connect: closing previous connection before reconnect")
+                await self.disconnect()
+
             # Steps 1-2: REST session init (token + ICE servers)
             session = await self.initialize_session()
             ice_servers = session["ice_servers"]

@@ -204,9 +204,10 @@ describe("Mic -> WebSocket E2E pipeline", () => {
     // 2. Navigate to lesson view
     await navigateToLessonView();
 
-    // The WS should have been created during getting-ready
-    expect(mockWsInstances.length).toBeGreaterThanOrEqual(1);
-    const ws = mockWsInstances[0];
+    // Exactly one WS should be created — the serverUrlRef fix prevents
+    // connect identity changes from creating a second WebSocket.
+    expect(mockWsInstances.length).toBe(1);
+    const ws = mockWsInstances[mockWsInstances.length - 1];
     expect(ws.readyState).toBe(1); // OPEN
 
     // 3. Simulate greeting completion so mode returns to idle and mic is enabled.

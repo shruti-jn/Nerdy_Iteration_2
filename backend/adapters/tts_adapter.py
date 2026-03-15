@@ -154,9 +154,12 @@ class CartesiaTTSAdapter(BaseTTSAdapter):
         if not sentence or not sentence.strip():
             return
 
-        # Skip punctuation-only fragments — Cartesia rejects them with 400
-        if re.fullmatch(r'[\s.!?,;:\-—…""\'()]+', sentence):
-            logger.debug("tts cartesia skipping punctuation-only: %r", sentence)
+        # Skip text with no actual words — Cartesia rejects it with HTTP 400
+        # ("Your transcript is empty or contains only punctuation").
+        # Using alphanumeric check is more robust than enumerating all
+        # possible punctuation/symbol characters.
+        if not re.search(r'[a-zA-Z0-9]', sentence):
+            logger.debug("tts cartesia skipping no-word text: %r", sentence)
             return
 
         self._cancel_event.clear()

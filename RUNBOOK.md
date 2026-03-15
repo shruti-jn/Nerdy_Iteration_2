@@ -171,6 +171,7 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Mock mode (UI without backend) | ✅ Done | `VITE_MOCK=true` in `.env.development` |
 | Backend latency metrics | ✅ Done | Per-stage nanosecond-precision timing; write-once TTFA; avatar stage; per-sentence TTS logging |
 | Per-component latency display (UI) | ✅ Done | Shows STT/LLM/TTS/Total; updates on success AND on partial failure |
+| Latency panel tooltips | ✅ Done | Hover tooltips explain stt_finish_ms, llm_ttf_ms, tts_ttf_ms, turn_duration_ms |
 | Latency trend history (UI) | ✅ Done | Click latency panel to open trend chart |
 | TTS: Cartesia Sonic-3 | ✅ Done | `CartesiaTTSAdapter` with `sonic-3`; select via `TTS_PROVIDER=cartesia` in `.env` |
 | Simli avatar WebRTC signaling (C1) | ✅ Done | `connect()` does token→ICE→WS→SDP exchange; `simli_sdp_offer` handler wired; handles legacy "START" + new JSON protocol |
@@ -218,3 +219,14 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Tutor identity: Socrates 6 | ✅ Done | Renamed from "Nova" across prompts, greeting, and frontend hints |
 | Scorer: Teacher Mode aware | ✅ Done | `score_no_direct_answer()` accepts `teacher_mode` flag; backward compatible |
 | SessionManager serialization | ✅ Done | `to_dict()` / `from_dict()` for session persistence and crash recovery |
+| TTS no-word text guard | ✅ Done | Cartesia rejects punctuation-only text with 400; replaced fragile regex with alphanumeric presence check |
+| Simli reconnect cleanup | ✅ Done | `connect()` calls `disconnect()` before creating new session; fixes React StrictMode double-connect race |
+| Avatar SSL transport detection | ✅ Done | `_is_ws_alive()` checks `transport.is_closing()` + pings enabled (20s interval, no pong timeout) |
+| Greeting error handling fix | ✅ Done | `greeting_complete` no longer sent on GREETING_FAILED; frontend resets mode and shows error |
+| VAD state reset on empty transcript | ✅ Done | `cancel_listening()` returns VAD to idle; prevents `listening → listening` transition errors |
+| Avatar ready state accuracy | ✅ Done | Uses `requestVideoFrameCallback` + dimension check instead of WebRTC track receipt |
+| Avatar connection stability (double-WS fix) | ✅ Done | `serverUrlRef` prevents `connect` identity change; `simliConnectingRef` guards against redundant Simli handshakes |
+| Vite proxy IPv4 fix | ✅ Done | Proxy targets use `127.0.0.1` instead of `localhost` to avoid Docker IPv6 port conflict |
+| Langfuse LLM observability | ✅ Done | Traces every Groq call (stream + quick_call) with input/output/usage/timing; graceful no-op when keys missing |
+| Fly.io deployment infra | ✅ Done | Multi-stage Dockerfile, fly.toml, .dockerignore, static file serving from FastAPI |
+| Production deployment (Fly.io) | 🚧 In progress | Infra ready; pending `fly deploy` with secrets |

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     logfire_token: str = Field(default="", description="Pydantic Logfire token for observability")
     braintrust_api_key: str = Field(default="", description="Braintrust API key for eval logging")
 
+    # --- Langfuse ---
+    langfuse_public_key: str = Field(default="", description="Langfuse public key for LLM tracing")
+    langfuse_secret_key: str = Field(default="", description="Langfuse secret key for LLM tracing")
+    langfuse_host: str = Field(default="https://cloud.langfuse.com", description="Langfuse API host")
+
     tts_provider: str = Field(default="deepgram", description="TTS provider: 'deepgram' or 'cartesia'")
     cartesia_voice_id: str = Field(default="", description="Cartesia voice ID (from Cartesia voice library)")
 

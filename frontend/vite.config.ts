@@ -6,13 +6,13 @@ export default defineConfig({
   server: {
     proxy: {
       "/session": {
-        target: "ws://localhost:8000",
+        target: "ws://127.0.0.1:8000",
         ws: true,
       },
-      "/health": "http://localhost:8000",
-      "/ready": "http://localhost:8000",
-      "/metrics": "http://localhost:8000",
-      "/topics": "http://localhost:8000",
+      "/health": "http://127.0.0.1:8000",
+      "/ready": "http://127.0.0.1:8000",
+      "/metrics": "http://127.0.0.1:8000",
+      "/topics": "http://127.0.0.1:8000",
     },
   },
   test: {

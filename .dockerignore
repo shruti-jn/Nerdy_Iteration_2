@@ -1,0 +1,46 @@
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment files (secrets injected via Fly secrets)
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+build/
+
+# Tests and dev tools
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+
+# Claude
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db

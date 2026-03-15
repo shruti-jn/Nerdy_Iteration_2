@@ -21,6 +21,7 @@ from typing import AsyncIterator
 from groq import AsyncGroq
 
 from adapters.base import BaseLLMEngine
+from observability.langfuse_setup import get_langfuse
 from pipeline.errors import AdapterError
 from pipeline.metrics import MetricsCollector
 
@@ -122,7 +123,26 @@ class GroqLLMEngine(BaseLLMEngine):
                 messages=[{"role": "user", "content": prompt}],
                 stream=False,
             )
-            return response.choices[0].message.content or ""
+            result = response.choices[0].message.content or ""
+
+            # Trace the generation in Langfuse (inherits parent span if active)
+            lf = get_langfuse()
+            if lf:
+                usage = getattr(response, "usage", None)
+                with lf.start_as_current_observation(
+                    name="llm_quick_call",
+                    as_type="generation",
+                    model=model,
+                    input=[{"role": "user", "content": prompt}],
+                    output=result,
+                    usage_details={
+                        "input": getattr(usage, "prompt_tokens", 0),
+                        "output": getattr(usage, "completion_tokens", 0),
+                    } if usage else None,
+                ):
+                    pass  # observation auto-ends on exit
+
+            return result
         except Exception as exc:
             raise AdapterError(
                 stage="llm",

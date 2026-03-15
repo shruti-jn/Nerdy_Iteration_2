@@ -34,6 +34,10 @@ export function App() {
   // ── Avatar connection state (shimmer → slow → live) ─────────────────────
   const [avatarState, setAvatarState] = useState<import("./types").AvatarConnectionState>("connecting");
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guard against redundant Simli connect sequences (e.g. double onSessionStart
+  // from WS reconnect or StrictMode). Set true when a connect starts; reset on
+  // success, failure, back-navigation, or retry.
+  const simliConnectingRef = useRef(false);
 
   // Start the slow timer when entering "getting-ready" view (not on page load)
   useEffect(() => {
@@ -55,7 +59,7 @@ export function App() {
   // Only connect when we're past topic selection
   const wsEnabled = store.view === "getting-ready" || store.view === "lesson";
 
-  const simliRtcRef = useRef<{ connect: () => Promise<boolean>; sendAudio: (data: Uint8Array) => void } | null>(null);
+  const simliRtcRef = useRef<{ connect: () => Promise<boolean>; sendAudio: (data: Uint8Array) => void; readonly isConnected: boolean } | null>(null);
 
   const socket = useTutorSocket({
     store,
@@ -63,6 +67,14 @@ export function App() {
     enabled: wsEnabled,
     _useMock: IS_MOCK,
     onSessionStart: () => {
+      // Skip if Simli is already connected or a connect sequence is in progress.
+      // This prevents destroying a working PeerConnection when onSessionStart
+      // fires a second time (e.g. WS auto-reconnect or StrictMode re-mount).
+      if (simliConnectingRef.current || simliRtcRef.current?.isConnected) {
+        console.debug("[App] onSessionStart — Simli already connected/connecting, skipping");
+        return;
+      }
+      simliConnectingRef.current = true;
       console.debug("[App] onSessionStart — beginning Simli connect sequence");
       // Retry Simli connect with backoff — only retry when the WS isn't open
       // yet (connect() returns false). Once it returns true (SDP sent), stop
@@ -70,6 +82,7 @@ export function App() {
       const tryConnect = (attempt: number) => {
         if (attempt > 5) {
           console.error("[App] Simli connect failed after 5 attempts — no open WebSocket");
+          simliConnectingRef.current = false;
           return;
         }
         const delay = attempt === 0 ? 200 : attempt * 500;
@@ -95,6 +108,7 @@ export function App() {
     },
     onSimliError: (message) => {
       console.debug("[App] onSimliError:", message);
+      simliConnectingRef.current = false;
       // Cancel the slow timer so "almost ready" text doesn't linger
       if (slowTimerRef.current) {
         clearTimeout(slowTimerRef.current);
@@ -112,9 +126,67 @@ export function App() {
   });
 
   // ── Simli avatar WebRTC connection ─────────────────────────────────────────
+  // Called by the <video> element's onPlaying handler (in GettingReadyView)
+  // when actual video playback begins — NOT merely when the WebRTC track arrives.
+  // Uses requestVideoFrameCallback (if available) to wait for the first real
+  // decoded frame with non-zero dimensions before declaring the avatar "live".
+  const handleVideoPlaying = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const markLive = () => {
+      console.debug("[App] Avatar video confirmed live (%dx%d)", video.videoWidth, video.videoHeight);
+      if (slowTimerRef.current) {
+        clearTimeout(slowTimerRef.current);
+        slowTimerRef.current = null;
+      }
+      setAvatarState("live");
+    };
+
+    // requestVideoFrameCallback fires when the browser is about to present a
+    // decoded frame — more reliable than "playing" for WebRTC streams.
+    // Use typeof check to avoid TS type narrowing issues with `in` operator.
+    const rvfc = (video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => void }).requestVideoFrameCallback;
+    if (typeof rvfc === "function") {
+      rvfc.call(video, () => {
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            markLive();
+          } else {
+            // Dimensions not ready yet — poll on each frame until they are
+            const poll = () => {
+              if (video.videoWidth > 0 && video.videoHeight > 0) {
+                markLive();
+              } else {
+                requestAnimationFrame(poll);
+              }
+            };
+            requestAnimationFrame(poll);
+          }
+        });
+    } else {
+      // Fallback: wait until videoWidth is non-zero (first decoded frame)
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        markLive();
+      } else {
+        const poll = () => {
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            markLive();
+          } else {
+            requestAnimationFrame(poll);
+          }
+        };
+        requestAnimationFrame(poll);
+      }
+    }
+  }, []);
+
   const simliRtc = useSimliWebRTC({
     getSignalingWs: () => socket.ws,
     _useMock: IS_MOCK,
+    onClose: () => {
+      console.debug("[App] Simli onClose — resetting connect guard");
+      simliConnectingRef.current = false;
+    },
     onStream: (stream) => {
       console.debug("[App] onStream called, tracks:", stream.getTracks().map(t => t.kind).join(", "));
       streamRef.current = stream;
@@ -132,12 +204,13 @@ export function App() {
       } else {
         console.debug("[App] onStream: no video element yet — stream saved to ref for re-attach");
       }
-      // Avatar is live — cancel the slow timer if still pending
+      // Track received — cancel the slow timer since we're making progress,
+      // but don't set "live" yet. That happens in handleVideoPlaying when
+      // the <video> element actually starts rendering frames.
       if (slowTimerRef.current) {
         clearTimeout(slowTimerRef.current);
         slowTimerRef.current = null;
       }
-      setAvatarState("live");
     },
   });
 
@@ -187,6 +260,7 @@ export function App() {
 
   const handleBack = useCallback(() => {
     console.debug("[App] handleBack — disconnecting WS, resetting store");
+    simliConnectingRef.current = false;
     socket.disconnect();
     store.reset();
     store.setView("topic-select");
@@ -246,6 +320,7 @@ export function App() {
   }, [store, audioCapture, socket]);
 
   const handleAvatarRetry = useCallback(() => {
+    simliConnectingRef.current = false;
     store.setError(null);
     setAvatarState("connecting");
     slowTimerRef.current = setTimeout(() => {
@@ -307,6 +382,7 @@ export function App() {
         videoRef={videoRef as React.RefObject<HTMLVideoElement>}
         onBack={handleBack}
         onStart={handleStartLesson}
+        onVideoPlaying={handleVideoPlaying}
       />
     );
   }

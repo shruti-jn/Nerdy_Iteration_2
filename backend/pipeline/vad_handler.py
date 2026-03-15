@@ -25,7 +25,7 @@ from pipeline.errors import InterruptError
 # Valid state transitions: current_state -> set of allowed next states
 _TRANSITIONS: dict[str, set[str]] = {
     "idle": {"listening"},
-    "listening": {"processing"},
+    "listening": {"processing", "idle"},
     "processing": {"speaking"},
     "speaking": {"listening", "idle"},
 }
@@ -92,6 +92,15 @@ class VADHandler:
         to receive student audio.
         """
         self._transition("listening")
+
+    def cancel_listening(self) -> None:
+        """Transition from LISTENING back to IDLE.
+
+        Called when listening produced no usable transcript (empty audio,
+        silence, or STT returned nothing). Resets the state so the next
+        turn can start cleanly.
+        """
+        self._transition("idle")
 
     def start_processing(self) -> None:
         """Transition from LISTENING to PROCESSING.

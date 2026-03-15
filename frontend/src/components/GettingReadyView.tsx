@@ -10,9 +10,11 @@ interface Props {
   videoRef: React.RefObject<HTMLVideoElement>;
   onBack: () => void;
   onStart: () => void;
+  /** Called when the <video> element starts playing — signals avatar is truly live */
+  onVideoPlaying?: () => void;
 }
 
-export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, onBack, onStart }: Props) {
+export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, onBack, onStart, onVideoPlaying }: Props) {
   const avatarReady = avatarState === "live";
   const allReady = wsConnected && avatarReady;
 
@@ -60,6 +62,7 @@ export function GettingReadyView({ topic, avatarState, wsConnected, videoRef, on
             autoPlay
             playsInline
             muted
+            onPlaying={onVideoPlaying}
             className={`getting-ready__video ${avatarReady ? "getting-ready__video--active" : ""}`}
           />
           {!avatarReady && (
