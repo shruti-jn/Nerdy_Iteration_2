@@ -35,9 +35,14 @@ async function enterLessonWithLowTurnLimit(page: import("@playwright/test").Page
 
 async function doOneTurn(page: import("@playwright/test").Page) {
   const micBtn = page.getByRole("button", { name: "Hold to speak" });
-  await micBtn.dispatchEvent("mousedown");
+  const box = await micBtn.boundingBox();
+  if (!box) throw new Error("Mic button not found");
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
   await page.waitForTimeout(300);
-  await micBtn.dispatchEvent("mouseup");
+  await page.mouse.up();
 }
 
 test.describe("Session complete flow", () => {

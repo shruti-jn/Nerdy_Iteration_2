@@ -26,6 +26,7 @@ function ts(): string {
 
 export function App() {
   const store = useSessionStore();
+  const pendingLessonActionRef = useRef<"fresh" | "continue" | null>(null);
 
   // Expose store in mock/test mode so E2E tests can manipulate state
   useEffect(() => {
@@ -35,12 +36,19 @@ export function App() {
   });
 
 
-  // ── Avatar provider (set by backend in session_start) ────────────────────
-  const [avatarProvider, setAvatarProvider] = useState<AvatarProvider>("simli");
+  // ── Avatar provider ──────────────────────────────────────────────────────
+  // Seed from URL param so the UI renders the correct container (<video> vs
+  // <div>) from the very first render — before session_start arrives.
+  // The backend also reads this param and echoes it back in session_start.
+  const initialProvider = (() => {
+    const p = new URLSearchParams(window.location.search).get("avatar");
+    return p === "spatialreal" ? "spatialreal" as const : "simli" as const;
+  })();
+  const [avatarProvider, setAvatarProvider] = useState<AvatarProvider>(initialProvider);
   // Ref mirrors state so WS callbacks (which fire before React re-renders)
   // always read the latest value. State alone is stale inside closures that
   // run synchronously after setAvatarProvider.
-  const avatarProviderRef = useRef<AvatarProvider>("simli");
+  const avatarProviderRef = useRef<AvatarProvider>(initialProvider);
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -95,44 +103,58 @@ export function App() {
       avatarProviderRef.current = provider; // sync — available immediately to onSessionStart
       setAvatarProvider(provider);          // async — triggers re-render
     },
-    onSessionStart: () => {
+    onSessionStart: (kind) => {
       // SpatialReal: avatar init happens via onSpatialRealInit, not here
       // Read from ref (not state) because this runs synchronously after onAvatarProvider
       // before React has re-rendered with the new state value.
       if (avatarProviderRef.current === "spatialreal") {
         console.debug("[App] onSessionStart — SpatialReal mode, waiting for spatialreal_session_init");
-        return;
-      }
-      // Simli: connect WebRTC
-      // Skip if Simli is already connected or a connect sequence is in progress.
-      if (simliConnectingRef.current || simliRtcRef.current?.isConnected) {
-        console.debug("[App] onSessionStart — Simli already connected/connecting, skipping");
-        return;
-      }
-      simliConnectingRef.current = true;
-      console.debug("[App] onSessionStart — beginning Simli connect sequence");
-      const tryConnect = (attempt: number) => {
-        if (attempt > 5) {
-          console.error("[App] Simli connect failed after 5 attempts — no open WebSocket");
-          simliConnectingRef.current = false;
-          return;
-        }
-        const delay = attempt === 0 ? 200 : attempt * 500;
-        setTimeout(() => {
-          const rtc = simliRtcRef.current;
-          if (!rtc) { console.debug("[App] Simli tryConnect: no RTC ref"); return; }
-          console.debug(`[App] Simli connect attempt ${attempt + 1}, delay=${delay}ms`);
-          rtc.connect().then((started) => {
-            if (started) {
-              console.debug(`[App] Simli connect attempt ${attempt + 1} — SDP offer sent`);
-            } else {
-              console.warn(`[App] Simli connect attempt ${attempt + 1} — WS not ready, retrying...`);
-              tryConnect(attempt + 1);
+      } else {
+        // Simli: connect WebRTC
+        // Skip if Simli is already connected or a connect sequence is in progress.
+        if (simliConnectingRef.current || simliRtcRef.current?.isConnected) {
+          console.debug("[App] onSessionStart — Simli already connected/connecting, skipping");
+        } else {
+          simliConnectingRef.current = true;
+          console.debug("[App] onSessionStart — beginning Simli connect sequence");
+          const tryConnect = (attempt: number) => {
+            if (attempt > 5) {
+              console.error("[App] Simli connect failed after 5 attempts — no open WebSocket");
+              simliConnectingRef.current = false;
+              return;
             }
-          }).catch(() => tryConnect(attempt + 1));
-        }, delay);
-      };
-      tryConnect(0);
+            const delay = attempt === 0 ? 200 : attempt * 500;
+            setTimeout(() => {
+              const rtc = simliRtcRef.current;
+              if (!rtc) { console.debug("[App] Simli tryConnect: no RTC ref"); return; }
+              console.debug(`[App] Simli connect attempt ${attempt + 1}, delay=${delay}ms`);
+              rtc.connect().then((started) => {
+                if (started) {
+                  console.debug(`[App] Simli connect attempt ${attempt + 1} — SDP offer sent`);
+                } else {
+                  console.warn(`[App] Simli connect attempt ${attempt + 1} — WS not ready, retrying...`);
+                  tryConnect(attempt + 1);
+                }
+              }).catch(() => tryConnect(attempt + 1));
+            }, delay);
+          };
+          tryConnect(0);
+        }
+      }
+
+      if (pendingLessonActionRef.current === "fresh" && kind === "start") {
+        pendingLessonActionRef.current = null;
+        window.setTimeout(() => {
+          void startLessonFlow(true);
+        }, 0);
+      }
+
+      if (pendingLessonActionRef.current === "continue" && kind === "restore") {
+        pendingLessonActionRef.current = null;
+        window.setTimeout(() => {
+          void startLessonFlow(false);
+        }, 0);
+      }
     },
     onSpatialRealInit: (sessionToken, appId, avatarId) => {
       console.debug("[App] SpatialReal init received, appId:", appId, "avatarId:", avatarId);
@@ -352,10 +374,12 @@ export function App() {
     store.setView("topic-select");
   }, [socket, store, avatarProvider, spatialReal]);
 
-  const handleStartLesson = useCallback(async () => {
+  const startLessonFlow = useCallback(async (sendGreeting: boolean) => {
     console.debug("[App] handleStartLesson — avatarProvider:", avatarProvider, "stream saved:", !!streamRef.current, "avatarState:", avatarState);
     store.setView("lesson");
-    store.setMode("tutor-greeting");
+    if (sendGreeting) {
+      store.setMode("tutor-greeting");
+    }
     // SpatialReal: start() MUST complete before sendStartLesson so audio
     // chunks from the greeting don't arrive before the SDK is ready.
     // start() includes initializeAudioContext() which requires a user gesture,
@@ -367,8 +391,26 @@ export function App() {
         console.error("[App] SpatialReal start failed:", err);
       }
     }
-    socket.sendStartLesson();
+    if (sendGreeting) {
+      socket.sendStartLesson();
+    }
   }, [socket, store, avatarState, avatarProvider, spatialReal]);
+
+  const handleStartLesson = useCallback(async () => {
+    if (socket.sessionKind === "restore") {
+      console.debug("[App] handleStartLesson — restarting with a fresh session");
+      pendingLessonActionRef.current = "fresh";
+      store.reset();
+      socket.reconnect({ freshSession: true });
+      return;
+    }
+    await startLessonFlow(true);
+  }, [socket, startLessonFlow, store]);
+
+  const handleContinueLesson = useCallback(async () => {
+    pendingLessonActionRef.current = null;
+    await startLessonFlow(false);
+  }, [startLessonFlow]);
 
   // ── Mic handlers ───────────────────────────────────────────────────────────
 
@@ -484,6 +526,8 @@ export function App() {
         containerRef={containerRef as React.RefObject<HTMLDivElement>}
         onBack={handleBack}
         onStart={handleStartLesson}
+        onContinue={handleContinueLesson}
+        canContinue={socket.sessionKind === "restore"}
         onVideoPlaying={handleVideoPlaying}
       />
     );

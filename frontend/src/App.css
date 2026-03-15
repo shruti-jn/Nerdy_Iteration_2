@@ -9,7 +9,7 @@
 /* ── Main content area ────────────────────────────────────────────────────── */
 .app__main {
   display: grid;
-  grid-template-columns: var(--col-side-w) 1fr var(--col-side-w);
+  grid-template-columns: var(--col-left-w) 1fr var(--col-right-w);
   flex: 1;
   margin-top: var(--topbar-h);
   margin-bottom: var(--bottombar-h);
@@ -56,7 +56,8 @@
 /* ── Responsive: tablet ───────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   :root {
-    --col-side-w: 220px;
+    --col-left-w: 200px;
+    --col-right-w: 280px;
   }
 }
 

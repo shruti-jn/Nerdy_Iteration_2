@@ -33,7 +33,7 @@ export default defineConfig({
   webServer: {
     command: `npx vite --port ${E2E_PORT} --mode test`,
     port: E2E_PORT,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
     timeout: 15_000,
   },
 });

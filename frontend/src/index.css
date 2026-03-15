@@ -31,7 +31,8 @@
   /* Layout */
   --topbar-h:       56px;
   --bottombar-h:    88px;
-  --col-side-w:     280px;
+  --col-left-w:     260px;
+  --col-right-w:    340px;
 
   /* Typography */
   --font:           "Inter", system-ui, -apple-system, sans-serif;

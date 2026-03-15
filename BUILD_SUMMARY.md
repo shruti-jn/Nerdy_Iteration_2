@@ -1080,3 +1080,15 @@ Decisions:
 - **Both hooks always called**: React's rules of hooks require consistent call order. Both `useSimliWebRTC` and `useSpatialRealAvatar` are called every render, but only the active provider's hook does real work.
 
 Refs: `backend/config.py:60-68`, `backend/adapters/spatialreal_adapter.py:1-145`, `backend/main.py:30,183-186,209-224`, `backend/pipeline/orchestrator_custom.py:58,317-330,348`, `backend/tests/test_spatialreal_adapter.py`, `backend/.env.example:55-64`, `frontend/vite.config.ts:3-5`, `frontend/src/types.ts:4`, `frontend/src/useSpatialRealAvatar.ts`, `frontend/src/useTutorSocket.ts:27-29,49-51,96-98,207-211,299-301,328-331`, `frontend/src/App.tsx:15-16,39-42,78-148,290-296,361-365`, `frontend/src/components/AvatarFeed.tsx:3,10-13,52-69`, `frontend/src/components/GettingReadyView.tsx:4,11-13,65-78`, `frontend/src/components/AvatarFeed.css:48-66`, `frontend/src/components/GettingReadyView.css:83-100`
+
+---
+
+### Wider Concept Map Panel
+
+What: Made the concept map (right rail) wider and the concept canvas larger.
+
+Why: The concept map panel was too narrow at 280px, making emoji diagrams and captions feel cramped.
+
+How: Split the single `--col-side-w` CSS variable into `--col-left-w` (260px) and `--col-right-w` (340px) so the right rail is 60px wider than before while the left rail (conversation history) is slightly narrower. Increased the concept canvas diagram font size from 22px to 28px, caption font from 12px to 13px with wider max-width (260px → 300px), and added more internal padding. Updated tablet breakpoint to match. Verified no lint errors and all 139 passing frontend tests still pass (4 pre-existing mic-pipeline failures unrelated).
+
+Refs: `frontend/src/index.css:34-35`, `frontend/src/App.css:12,57-61`, `frontend/src/components/ConceptCanvas.css:5-6,31-35,39,43`

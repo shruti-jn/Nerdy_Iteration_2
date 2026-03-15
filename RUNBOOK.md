@@ -276,3 +276,4 @@ Query params: `topic` — required, one of `photosynthesis`, `newtons_laws`
 | Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |
 | Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |
 | SpatialReal avatar integration | ✅ Done | Feature flag `AVATAR_PROVIDER=spatialreal`; URL param `?avatar=spatialreal`; SDK Mode (frontend-driven); 10 backend tests |
+| Wider concept map panel | ✅ Done | Right rail 340px (was 280px); larger emoji diagrams (28px); asymmetric grid layout |

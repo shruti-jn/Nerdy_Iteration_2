@@ -51,6 +51,11 @@ export interface SimliWebRTC {
  *  6. Set remote description; ICE negotiation completes automatically
  *  7. ontrack fires → call opts.onStream(stream)
  */
+// 10 ms of silence at 16 kHz mono PCM16 = 320 bytes (160 samples × 2 bytes).
+// Sent periodically to prevent Simli from closing the DataChannel due to inactivity.
+const SILENT_FRAME = new Uint8Array(320);
+const DC_KEEPALIVE_INTERVAL_MS = 3_000;
+
 export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
@@ -66,6 +71,30 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   // Track whether we've warned about DC not being open (avoid spamming console)
   const dcWarnedRef = useRef(false);
 
+  // Keepalive interval for the DataChannel — sends silent PCM frames every 3 s
+  // to prevent Simli from closing the DC due to inactivity between turns.
+  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopKeepalive = useCallback(() => {
+    if (keepaliveRef.current !== null) {
+      clearInterval(keepaliveRef.current);
+      keepaliveRef.current = null;
+    }
+  }, []);
+
+  const startKeepalive = useCallback(() => {
+    stopKeepalive();
+    keepaliveRef.current = setInterval(() => {
+      const dc = dcRef.current;
+      if (dc && dc.readyState === "open") {
+        dc.send(SILENT_FRAME as unknown as Uint8Array<ArrayBuffer>);
+      } else {
+        // DC is no longer open — stop sending keepalives
+        stopKeepalive();
+      }
+    }, DC_KEEPALIVE_INTERVAL_MS);
+  }, [stopKeepalive]);
+
   const sendAudio = useCallback((data: Uint8Array) => {
     const dc = dcRef.current;
     if (dc && dc.readyState === "open") {
@@ -80,13 +109,14 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   }, []);
 
   const disconnect = useCallback(() => {
+    stopKeepalive();
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.close();
     pcRef.current = null;
     connectedRef.current = false;
     optsRef.current.onClose?.();
-  }, []);
+  }, [stopKeepalive]);
 
   const connect = useCallback(async (): Promise<boolean> => {
     if (optsRef.current._useMock) {
@@ -103,6 +133,7 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     // Clean up any previous failed attempt before starting fresh
     if (pcRef.current) {
       console.log(ts(), "[SimliWebRTC] Cleaning up stale PeerConnection before reconnect");
+      stopKeepalive();
       dcRef.current?.close();
       dcRef.current = null;
       pcRef.current.close();
@@ -126,8 +157,15 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     const dc = pc.createDataChannel("audio", { ordered: true });
     dcRef.current = dc;
 
-    dc.onopen = () => console.log(ts(), "[SimliWebRTC] DataChannel open — ready to send audio");
-    dc.onclose = () => console.log(ts(), "[SimliWebRTC] DataChannel closed");
+    dc.onopen = () => {
+      console.log(ts(), "[SimliWebRTC] DataChannel open — ready to send audio");
+      dcWarnedRef.current = false;
+      startKeepalive();
+    };
+    dc.onclose = () => {
+      console.warn(ts(), "[SimliWebRTC] DataChannel closed — lip-sync audio will be dropped until reconnect");
+      stopKeepalive();
+    };
     dc.onerror = (err) => console.error(ts(), "[SimliWebRTC] DataChannel error:", err);
 
     // Receive avatar video + audio from Simli
@@ -216,7 +254,7 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     );
     console.log(ts(), "[SimliWebRTC] SDP offer sent to server");
     return true;
-  }, [disconnect]);
+  }, [disconnect, stopKeepalive, startKeepalive]);
 
   // Only clean up on unmount — disconnect is now stable (no deps on opts)
   // so this effect won't re-run on re-renders.
