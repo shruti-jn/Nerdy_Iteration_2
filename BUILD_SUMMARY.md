@@ -1354,3 +1354,43 @@ What: Repositioned the photosynthesis concept-canvas nodes so `Water` no longer 
 Why: The left-side input cards were visually colliding in the narrow concept-map rail, and the leaf factory needed to open in a clearer upper-right docking position instead of competing with the center of the plant.
 
 How: Updated `frontend/src/components/ConceptCanvas.tsx` arrow paths and factory-open class hooks, adjusted `frontend/src/components/ConceptCanvas.css` node coordinates plus the expanded leaf-zoom docking/plant shift for desktop and mobile, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`62 passed`) and `npm run typecheck`.
+
+---
+
+## 2026-03-15 18:16
+
+What: Hardened the Simli avatar handshake so transient SDP-answer stalls get a second chance before the app surfaces a hard connect failure.
+
+Why: Simli was intermittently timing out while returning its SDP answer, which made avatar loading fail too often even when a retry would likely have succeeded.
+
+How: Split the Simli adapter handshake into step-specific timeouts, gave the SDP-answer wait a longer window, added one internal retry with cleanup/backoff in `backend/adapters/avatar_adapter.py`, added retry regression coverage in `backend/tests/test_avatar_adapter.py`, and verified with `python3 -m pytest backend/tests/test_avatar_adapter.py -q` (`19 passed`) plus `python3 -m pytest backend/tests/test_server.py -q -k simli` (`3 passed`).
+
+---
+
+## 2026-03-15 18:27
+
+What: Hardened the Simli custom handshake against malformed SDP-answer payloads so the backend retries instead of immediately failing on non-JSON responses.
+
+Why: Live Simli sessions were still failing after the timeout fix because Simli sometimes returned a short malformed answer payload, which caused `JSONDecodeError` before the retry logic could help.
+
+How: Updated `backend/adapters/avatar_adapter.py` to preview and classify malformed SDP-answer payloads as retryable handshake errors, retry them with the existing cleanup/backoff path, and surface clearer diagnostics; added regression coverage in `backend/tests/test_avatar_adapter.py` for malformed-answer recovery and exhaustion; and verified with `python3 -m pytest backend/tests/test_avatar_adapter.py -q` (`21 passed`) plus `python3 -m pytest backend/tests/test_server.py -q -k simli` (`5 passed`).
+
+---
+
+## 2026-03-15 18:44
+
+What: Restored custom-mode Simli lip-sync by routing tutor audio back through the backend Simli adapter instead of the browser WebRTC DataChannel.
+
+Why: Live logs showed the avatar video and tutor audio were both working, but the mouth stayed still because custom mode was sending lip-sync PCM over the wrong transport; the local `simli-client` source confirmed P2P lip-sync audio uses Simli’s signaling WebSocket path, which the backend adapter already maintains.
+
+How: Updated `backend/pipeline/orchestrator_custom.py` to forward each TTS chunk to both the frontend `audio_chunk` message stream and the active Simli adapter when present, changed `frontend/src/App.tsx` so the custom Simli browser path no longer forwards tutor audio over WebRTC, added regression coverage in `backend/tests/test_orchestrator_custom.py` and `frontend/src/App.avatar-lifecycle.test.tsx`, and verified with `python3 -m pytest backend/tests/test_orchestrator_custom.py backend/tests/test_avatar_adapter.py backend/tests/test_server.py -q -k 'simli or stream_text_audio or constructor_uses_explicit_avatar_provider or build_turn_hint'` (`11 passed`) plus `cd frontend && npm test -- --run src/App.avatar-lifecycle.test.tsx` (`7 passed`).
+
+---
+
+## 2026-03-15 18:51
+
+What: Hardened custom-mode Simli turn-to-turn keepalive by matching the silence frame size to Simli’s own default P2P audio chunk size.
+
+Why: Live logs showed greeting lip-sync worked, then the Simli signaling socket died during the next tutor turn and dropped later mouth animation; the old 320-byte keepalive frame was much smaller than the `simli-client` P2P transport’s normal 3000-sample PCM payloads.
+
+How: Updated `backend/adapters/avatar_adapter.py` so the custom-mode keepalive sends 3000 PCM16 silence samples (6000 bytes) instead of a tiny 10 ms frame, added a regression check in `backend/tests/test_avatar_adapter.py`, and verified with `python3 -m pytest backend/tests/test_avatar_adapter.py backend/tests/test_server.py -q -k simli` (`7 passed`).

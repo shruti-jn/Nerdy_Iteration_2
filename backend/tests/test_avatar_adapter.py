@@ -47,6 +47,13 @@ def _mock_config():
 class TestHappyPath:
     """Verify core adapter functionality with mocked Simli API."""
 
+    def test_keepalive_frame_matches_simli_client_chunk_size(self):
+        """Keepalive silence should be large enough to mimic normal Simli PCM payloads."""
+        from adapters import avatar_adapter as avatar_module
+
+        assert avatar_module._KEEPALIVE_SAMPLES == 3000
+        assert len(avatar_module._SILENT_FRAME) == 6000
+
     @pytest.mark.asyncio
     async def test_initialize_session_gets_token(self):
         """initialize_session should call the Simli token endpoint."""
@@ -354,22 +361,118 @@ class TestConnect:
 
     @pytest.mark.asyncio
     async def test_connect_timeout_raises_adapter_error(self):
-        """connect() wraps asyncio.TimeoutError into AdapterError(provider='simli')."""
+        """connect() retries transient timeouts, then raises AdapterError if they persist."""
         from adapters.avatar_adapter import SimliAvatarAdapter
 
         adapter = SimliAvatarAdapter(_mock_config())
 
         with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
             MockClient.return_value = _mock_http_session("tok", [])
+            connect_mock = AsyncMock(side_effect=asyncio.TimeoutError())
             with patch(
                 "adapters.avatar_adapter.websockets.connect",
-                new=AsyncMock(side_effect=asyncio.TimeoutError()),
+                new=connect_mock,
             ):
                 with pytest.raises(AdapterError) as exc_info:
                     await adapter.connect("v=0 offer")
 
         assert exc_info.value.stage == "avatar"
         assert exc_info.value.provider == "simli"
+        assert connect_mock.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_connect_retries_timeout_waiting_for_answer_and_succeeds(self):
+        """connect() should recover when a first SDP-answer wait times out."""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+        ice = [{"urls": "stun:stun.l.google.com:19302"}]
+
+        first_ws = AsyncMock()
+        first_ws.recv = AsyncMock(side_effect=["START", asyncio.TimeoutError()])
+        first_ws.send = AsyncMock()
+        first_ws.close = AsyncMock()
+
+        second_ws = AsyncMock()
+        second_ws.recv = AsyncMock(
+            side_effect=["START", '{"type": "answer", "sdp": "v=0 recovered-answer"}']
+        )
+        second_ws.send = AsyncMock()
+        second_ws.close = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok-xyz", ice)
+            connect_mock = AsyncMock(side_effect=[first_ws, second_ws])
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                result = await adapter.connect("v=0 offer...")
+
+        assert result["sdp"] == "v=0 recovered-answer"
+        assert result["ice_servers"] == ice
+        assert adapter._ready is True
+        assert connect_mock.await_count == 2
+        first_ws.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connect_retries_malformed_answer_and_succeeds(self):
+        """connect() should retry when Simli returns a non-JSON SDP answer."""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+        ice = [{"urls": "stun:stun.l.google.com:19302"}]
+
+        first_ws = AsyncMock()
+        first_ws.recv = AsyncMock(side_effect=["START", "not-json-answer-payload"])
+        first_ws.send = AsyncMock()
+        first_ws.close = AsyncMock()
+
+        second_ws = AsyncMock()
+        second_ws.recv = AsyncMock(
+            side_effect=["START", '{"type": "answer", "sdp": "v=0 recovered-answer"}']
+        )
+        second_ws.send = AsyncMock()
+        second_ws.close = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok-xyz", ice)
+            connect_mock = AsyncMock(side_effect=[first_ws, second_ws])
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                result = await adapter.connect("v=0 offer...")
+
+        assert result["sdp"] == "v=0 recovered-answer"
+        assert result["ice_servers"] == ice
+        assert adapter._ready is True
+        assert connect_mock.await_count == 2
+        first_ws.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connect_malformed_answer_raises_after_retries(self):
+        """connect() should still fail cleanly if Simli keeps sending malformed answers."""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+
+        first_ws = AsyncMock()
+        first_ws.recv = AsyncMock(side_effect=["START", "not-json-answer-payload"])
+        first_ws.send = AsyncMock()
+        first_ws.close = AsyncMock()
+
+        second_ws = AsyncMock()
+        second_ws.recv = AsyncMock(side_effect=["START", "still-not-json"])
+        second_ws.send = AsyncMock()
+        second_ws.close = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok", [])
+            connect_mock = AsyncMock(side_effect=[first_ws, second_ws])
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                with pytest.raises(AdapterError) as exc_info:
+                    await adapter.connect("v=0 offer")
+
+        assert exc_info.value.stage == "avatar"
+        assert exc_info.value.provider == "simli"
+        assert connect_mock.await_count == 2
+        first_ws.close.assert_awaited_once()
+        second_ws.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_connect_unexpected_first_message_raises_adapter_error(self):

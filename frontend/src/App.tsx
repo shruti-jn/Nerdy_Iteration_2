@@ -177,9 +177,6 @@ export function App() {
       if (avatarProviderRef.current === "spatialreal") {
         // Forward TTS audio to SpatialReal SDK for lip-sync
         spatialReal.sendAudio(pcm.buffer as ArrayBuffer, false);
-      } else {
-        // Forward TTS audio to Simli via DataChannel for avatar lip-sync
-        simliRtcRef.current?.sendAudio(pcm);
       }
     },
     shouldPlayAudioChunk: () => avatarProviderRef.current !== "spatialreal",

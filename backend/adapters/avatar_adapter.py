@@ -40,10 +40,22 @@ _TOKEN_ENDPOINT = f"{_SIMLI_BASE_URL}/compose/token"
 _ICE_ENDPOINT = f"{_SIMLI_BASE_URL}/compose/ice"
 _WS_BASE_URL = "wss://api.simli.ai/compose/webrtc/p2p"
 
-_HANDSHAKE_TIMEOUT_S = 10.0  # Max wait per step during WebRTC handshake
+_SESSION_INIT_TIMEOUT_S = 10.0
+_WS_CONNECT_TIMEOUT_S = 10.0
+_READY_SIGNAL_TIMEOUT_S = 10.0
+_SDP_ANSWER_TIMEOUT_S = 15.0
+_CONNECT_RETRY_ATTEMPTS = 2
+_CONNECT_RETRY_BACKOFF_S = 1.0
 _KEEPALIVE_INTERVAL_S = 3.0  # Send silent audio to prevent Simli idle timeout
-# 10 ms of silence at 16 kHz mono PCM16 = 320 bytes (160 samples × 2 bytes)
-_SILENT_FRAME = b"\x00" * 320
+# Match simli-client's default audio worklet buffer: 3000 PCM16 samples at 16 kHz.
+# The previous 10 ms keepalive frame was much smaller than real payloads and
+# was not reliably keeping the custom-mode signaling socket alive across turns.
+_KEEPALIVE_SAMPLES = 3000
+_SILENT_FRAME = b"\x00" * (_KEEPALIVE_SAMPLES * 2)
+
+
+class _RetryableHandshakeResponseError(RuntimeError):
+    """Raised when Simli returns a transient malformed handshake payload."""
 
 
 class SimliAvatarAdapter(BaseAvatarAdapter):
@@ -112,7 +124,7 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                         "Content-Type": "application/json",
                         "x-simli-api-key": self._api_key,
                     },
-                    timeout=10.0,
+                    timeout=_SESSION_INIT_TIMEOUT_S,
                 )
                 token_resp.raise_for_status()
                 token_data = token_resp.json()
@@ -122,7 +134,7 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                 ice_resp = await client.get(
                     _ICE_ENDPOINT,
                     headers={"x-simli-api-key": self._api_key},
-                    timeout=10.0,
+                    timeout=_SESSION_INIT_TIMEOUT_S,
                 )
                 ice_resp.raise_for_status()
                 self._ice_servers = ice_resp.json()
@@ -145,6 +157,124 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                 cause=exc,
                 context={"face_id": self._face_id},
             ) from exc
+
+    async def _cleanup_failed_connect(self) -> None:
+        """Best-effort cleanup for a partially completed handshake attempt."""
+        self._stop_keepalive()
+        ws = self._ws
+        self._ws = None
+        self._ready = False
+        self._session_token = None
+        self._drop_logged = False
+
+        if ws is not None:
+            try:
+                await ws.close()
+            except Exception:
+                pass  # Best-effort cleanup between retries
+
+    async def _connect_once(self, sdp_offer: str) -> dict:
+        """Perform a single Simli WebRTC handshake attempt."""
+        # Steps 1-2: REST session init (token + ICE servers)
+        session = await self.initialize_session()
+        ice_servers = session["ice_servers"]
+
+        # Step 3: Open WebSocket to Simli signaling endpoint.
+        # Enable pings (20s interval) to keep the connection alive, but
+        # disable the pong timeout (ping_timeout=None) so the library
+        # won't kill the connection if Simli doesn't respond to pings.
+        # Previous approach (ping_interval=None) caused the connection
+        # to die silently at ~40s — either from Simli's server-side
+        # ping timeout or a network intermediary (CDN/ALB) idle timeout.
+        # With pings enabled but no timeout, the pings themselves act as
+        # traffic that prevents intermediary timeouts, and our
+        # _is_ws_alive() transport check catches true dead connections.
+        url = f"{_WS_BASE_URL}?session_token={self._session_token}"
+        self._ws = await asyncio.wait_for(
+            websockets.connect(url, ping_interval=20, ping_timeout=None),
+            timeout=_WS_CONNECT_TIMEOUT_S,
+        )
+
+        # Step 4: Wait for ready signal from Simli.
+        # Older Simli API sends the literal string "START".
+        # Newer API sends JSON: {"destination": "<b64-addr>", "session_id": "..."}
+        start_msg = await asyncio.wait_for(
+            self._ws.recv(), timeout=_READY_SIGNAL_TIMEOUT_S
+        )
+        if start_msg == "START":
+            logger.info("Simli ready (legacy protocol): START received")
+        else:
+            try:
+                conn_info = json.loads(start_msg)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    f"Expected 'START' or JSON connection info from Simli, "
+                    f"got: {start_msg!r}"
+                ) from exc
+            if "destination" not in conn_info:
+                raise RuntimeError(
+                    f"Simli JSON missing 'destination' field: {conn_info!r}"
+                )
+            dest_decoded = base64.b64decode(conn_info["destination"]).decode()
+            logger.info(
+                "Simli ready (new protocol): session_id=%s destination=%s",
+                conn_info.get("session_id", "?"),
+                dest_decoded,
+            )
+
+        # Step 5: Send SDP offer
+        logger.info(
+            "Simli sending SDP offer (ws_state=%s)",
+            getattr(self._ws, "state", "unknown"),
+        )
+        await self._ws.send(json.dumps({"type": "offer", "sdp": sdp_offer}))
+        logger.info("Simli SDP offer sent; awaiting answer...")
+
+        # Step 6: Receive SDP answer
+        raw_answer = await asyncio.wait_for(
+            self._ws.recv(), timeout=_SDP_ANSWER_TIMEOUT_S
+        )
+        logger.info("Simli SDP answer received (len=%d)", len(raw_answer))
+        answer_sdp = self._parse_answer_sdp(raw_answer)
+
+        self._ready = True
+        self._drop_logged = False
+        self._start_keepalive()
+        logger.info(
+            "Simli WebRTC handshake complete: token=%s...",
+            self._session_token[:8] if self._session_token else "none",
+        )
+        return {"sdp": answer_sdp, "ice_servers": ice_servers}
+
+    @staticmethod
+    def _preview_payload(payload: object, limit: int = 120) -> str:
+        """Return a compact single-line preview for log/error messages."""
+        if isinstance(payload, bytes):
+            text = payload.decode("utf-8", errors="replace")
+        else:
+            text = str(payload)
+        text = text.replace("\n", "\\n")
+        if len(text) > limit:
+            return text[:limit] + "..."
+        return text
+
+    def _parse_answer_sdp(self, raw_answer: object) -> str:
+        """Extract the SDP answer, retrying if Simli sends malformed JSON."""
+        try:
+            answer_data = json.loads(raw_answer)
+        except json.JSONDecodeError as exc:
+            preview = self._preview_payload(raw_answer)
+            raise _RetryableHandshakeResponseError(
+                f"Simli returned non-JSON SDP answer: {preview!r}"
+            ) from exc
+
+        answer_sdp = answer_data.get("sdp") or answer_data.get("answer")
+        if not answer_sdp:
+            raise _RetryableHandshakeResponseError(
+                f"Simli SDP answer missing 'sdp'/'answer' field: {answer_data!r}"
+            )
+
+        return answer_sdp
 
     async def connect(self, sdp_offer: str) -> dict:
         """Full WebRTC handshake: init session, open WebSocket, exchange SDP.
@@ -176,93 +306,52 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
             if self._ws is not None or self._ready:
                 logger.info("Simli connect: closing previous connection before reconnect")
                 await self.disconnect()
-
-            # Steps 1-2: REST session init (token + ICE servers)
-            session = await self.initialize_session()
-            ice_servers = session["ice_servers"]
-
-            # Step 3: Open WebSocket to Simli signaling endpoint.
-            # Enable pings (20s interval) to keep the connection alive, but
-            # disable the pong timeout (ping_timeout=None) so the library
-            # won't kill the connection if Simli doesn't respond to pings.
-            # Previous approach (ping_interval=None) caused the connection
-            # to die silently at ~40s — either from Simli's server-side
-            # ping timeout or a network intermediary (CDN/ALB) idle timeout.
-            # With pings enabled but no timeout, the pings themselves act as
-            # traffic that prevents intermediary timeouts, and our
-            # _is_ws_alive() transport check catches true dead connections.
-            url = f"{_WS_BASE_URL}?session_token={self._session_token}"
-            self._ws = await asyncio.wait_for(
-                websockets.connect(url, ping_interval=20, ping_timeout=None),
-                timeout=_HANDSHAKE_TIMEOUT_S,
-            )
-
-            # Step 4: Wait for ready signal from Simli.
-            # Older Simli API sends the literal string "START".
-            # Newer API sends JSON: {"destination": "<b64-addr>", "session_id": "..."}
-            start_msg = await asyncio.wait_for(
-                self._ws.recv(), timeout=_HANDSHAKE_TIMEOUT_S
-            )
-            if start_msg == "START":
-                logger.info("Simli ready (legacy protocol): START received")
-            else:
+            retryable_error: Optional[Exception] = None
+            for attempt in range(1, _CONNECT_RETRY_ATTEMPTS + 1):
                 try:
-                    conn_info = json.loads(start_msg)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(
-                        f"Expected 'START' or JSON connection info from Simli, "
-                        f"got: {start_msg!r}"
-                    ) from exc
-                if "destination" not in conn_info:
-                    raise RuntimeError(
-                        f"Simli JSON missing 'destination' field: {conn_info!r}"
+                    logger.info(
+                        "Simli connect attempt %d/%d for face_id=%s",
+                        attempt,
+                        _CONNECT_RETRY_ATTEMPTS,
+                        self._face_id,
                     )
-                dest_decoded = base64.b64decode(conn_info["destination"]).decode()
-                logger.info(
-                    "Simli ready (new protocol): session_id=%s destination=%s",
-                    conn_info.get("session_id", "?"),
-                    dest_decoded,
-                )
+                    result = await self._connect_once(sdp_offer)
+                    if attempt > 1:
+                        logger.info(
+                            "Simli connect recovered on attempt %d/%d",
+                            attempt,
+                            _CONNECT_RETRY_ATTEMPTS,
+                        )
+                    return result
+                except (asyncio.TimeoutError, _RetryableHandshakeResponseError) as exc:
+                    retryable_error = exc
+                    logger.warning(
+                        "Simli connect retryable failure on attempt %d/%d; retrying=%s error=%s",
+                        attempt,
+                        _CONNECT_RETRY_ATTEMPTS,
+                        attempt < _CONNECT_RETRY_ATTEMPTS,
+                        exc,
+                    )
+                    await self._cleanup_failed_connect()
+                    if attempt < _CONNECT_RETRY_ATTEMPTS:
+                        await asyncio.sleep(_CONNECT_RETRY_BACKOFF_S * attempt)
+                        continue
+                    break
 
-            # Step 5: Send SDP offer
-            logger.info(
-                "Simli sending SDP offer (ws_state=%s)",
-                getattr(self._ws, "state", "unknown"),
-            )
-            await self._ws.send(json.dumps({"type": "offer", "sdp": sdp_offer}))
-            logger.info("Simli SDP offer sent; awaiting answer...")
-
-            # Step 6: Receive SDP answer
-            raw_answer = await asyncio.wait_for(
-                self._ws.recv(), timeout=_HANDSHAKE_TIMEOUT_S
-            )
-            logger.info("Simli SDP answer received (len=%d)", len(raw_answer))
-            answer_data = json.loads(raw_answer)
-            answer_sdp = answer_data.get("sdp") or answer_data.get("answer")
-            if not answer_sdp:
-                raise RuntimeError(
-                    f"Simli SDP answer missing 'sdp'/'answer' field: {answer_data!r}"
-                )
-
-            self._ready = True
-            self._drop_logged = False
-            self._start_keepalive()
-            logger.info(
-                "Simli WebRTC handshake complete: token=%s...",
-                self._session_token[:8] if self._session_token else "none",
-            )
-            return {"sdp": answer_sdp, "ice_servers": ice_servers}
+            if retryable_error is not None:
+                raise AdapterError(
+                    stage="avatar",
+                    provider="simli",
+                    cause=retryable_error,
+                    context={"face_id": self._face_id},
+                ) from retryable_error
+            raise RuntimeError("Simli connect exited without result")
 
         except AdapterError:
+            await self._cleanup_failed_connect()
             raise
-        except asyncio.TimeoutError as exc:
-            raise AdapterError(
-                stage="avatar",
-                provider="simli",
-                cause=exc,
-                context={"face_id": self._face_id},
-            ) from exc
         except Exception as exc:
+            await self._cleanup_failed_connect()
             raise AdapterError(
                 stage="avatar",
                 provider="simli",

@@ -16,6 +16,7 @@ let spatialInitializeSpy: ReturnType<typeof vi.fn>;
 let spatialStartSpy: ReturnType<typeof vi.fn>;
 let spatialSendAudioSpy: ReturnType<typeof vi.fn>;
 let spatialConnectedSetter: ((value: boolean) => void) | null;
+let simliRtcSendAudioSpy: ReturnType<typeof vi.fn>;
 let simliConnected = false;
 let startLessonHadAttachedLessonVideo = false;
 let latestTutorSocketOpts:
@@ -86,7 +87,7 @@ vi.mock("./useSimliWebRTC", () => ({
       return true;
     }),
     disconnect: vi.fn(),
-    sendAudio: vi.fn(),
+    sendAudio: simliRtcSendAudioSpy,
     get isConnected() {
       return simliConnected;
     },
@@ -133,6 +134,7 @@ describe("App avatar lifecycle", () => {
     spatialStartSpy = vi.fn(async () => {});
     spatialSendAudioSpy = vi.fn();
     spatialConnectedSetter = null;
+    simliRtcSendAudioSpy = vi.fn();
     simliConnected = false;
     startLessonHadAttachedLessonVideo = false;
     latestTutorSocketOpts = null;
@@ -238,6 +240,23 @@ describe("App avatar lifecycle", () => {
     expect(spatialSendAudioSpy.mock.calls[1][1]).toBe(true);
   });
 
+  it("does not route Simli tutor audio through the browser sender in custom mode", async () => {
+    mockAvatarProvider = "simli";
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start Photosynthesis/i }));
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    act(() => {
+      latestTutorSocketOpts?.onAudioChunk?.(new Uint8Array([4, 5, 6]));
+    });
+
+    expect(simliRtcSendAudioSpy).not.toHaveBeenCalled();
+  });
   it("keeps the Simli stream attached when restarting a restored lesson", async () => {
     mockSessionKind = "restore";
 

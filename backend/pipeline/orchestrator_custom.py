@@ -429,10 +429,12 @@ class CustomOrchestrator:
                 if sent_first_byte_ns is None:
                     sent_first_byte_ns = time.monotonic_ns()
                 b64 = base64.b64encode(audio_chunk).decode("ascii")
-                # The browser owns Simli lip-sync by forwarding these chunks over
-                # the active WebRTC DataChannel. Keeping a single audio path avoids
-                # backend/frontend drift when one transport dies mid-session.
                 await self._send_json({"type": "audio_chunk", "data": b64})
+                # Custom Simli mode keeps a live signaling WebSocket on the backend.
+                # Feed the same PCM chunks there so lip-sync stays aligned with the
+                # tutor audio the browser is already playing.
+                if self._simli is not None:
+                    await self._simli.send_audio(audio_chunk)
 
             sent_tts_end = time.monotonic_ns()
             sent_ttfa = (
@@ -468,9 +470,9 @@ class CustomOrchestrator:
             if sent_first_byte_ns is None:
                 sent_first_byte_ns = time.monotonic_ns()
             b64 = base64.b64encode(audio_chunk).decode("ascii")
-            # Welcome-back and other prebuilt tutor audio use the same frontend-
-            # owned Simli path as normal turns.
             await self._send_json({"type": "audio_chunk", "data": b64})
+            if self._simli is not None:
+                await self._simli.send_audio(audio_chunk)
 
         sent_tts_end = time.monotonic_ns()
         sent_ttfa = (

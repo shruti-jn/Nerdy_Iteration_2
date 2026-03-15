@@ -5,7 +5,7 @@ Unit tests for CustomOrchestrator avatar-path behavior.
 from __future__ import annotations
 
 import base64
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call
 
 import pytest
 
@@ -25,8 +25,8 @@ class _FakeTTS:
 
 
 @pytest.mark.asyncio
-async def test_stream_text_audio_uses_frontend_audio_path_for_simli(test_config):
-    """Simli tutor audio should only go to the frontend audio_chunk stream."""
+async def test_stream_text_audio_forwards_chunks_to_frontend_and_simli_adapter(test_config):
+    """Custom Simli mode should drive both browser playback and backend lip-sync."""
     sent_messages: list[dict] = []
 
     async def send_json(payload: dict) -> None:
@@ -47,7 +47,32 @@ async def test_stream_text_audio_uses_frontend_audio_path_for_simli(test_config)
         {"type": "audio_chunk", "data": base64.b64encode(b"\x01\x02").decode("ascii")},
         {"type": "audio_chunk", "data": base64.b64encode(b"\x03\x04").decode("ascii")},
     ]
-    orchestrator._simli.send_audio.assert_not_awaited()
+    orchestrator._simli.send_audio.assert_has_awaits(
+        [call(b"\x01\x02"), call(b"\x03\x04")]
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_text_audio_only_uses_frontend_audio_when_simli_is_absent(test_config):
+    """SDK mode should keep using the frontend-only audio path."""
+    sent_messages: list[dict] = []
+
+    async def send_json(payload: dict) -> None:
+        sent_messages.append(payload)
+
+    orchestrator = CustomOrchestrator(
+        test_config,
+        "test-session",
+        send_json,
+        avatar_provider="simli",
+    )
+    orchestrator._tts = _FakeTTS([b"\x05\x06"])
+
+    await orchestrator._stream_text_audio("hello", MetricsCollector(), label="test")
+
+    assert sent_messages == [
+        {"type": "audio_chunk", "data": base64.b64encode(b"\x05\x06").decode("ascii")},
+    ]
 
 
 def test_constructor_uses_explicit_avatar_provider(test_config):
