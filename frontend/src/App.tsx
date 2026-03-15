@@ -352,15 +352,20 @@ export function App() {
     store.setView("topic-select");
   }, [socket, store, avatarProvider, spatialReal]);
 
-  const handleStartLesson = useCallback(() => {
+  const handleStartLesson = useCallback(async () => {
     console.debug("[App] handleStartLesson — avatarProvider:", avatarProvider, "stream saved:", !!streamRef.current, "avatarState:", avatarState);
     store.setView("lesson");
     store.setMode("tutor-greeting");
-    // SpatialReal: start() must be called from a user gesture (AudioContext requirement)
-    if (avatarProvider === "spatialreal") {
-      spatialReal.start().catch((err) => {
+    // SpatialReal: start() MUST complete before sendStartLesson so audio
+    // chunks from the greeting don't arrive before the SDK is ready.
+    // start() includes initializeAudioContext() which requires a user gesture,
+    // and controller.start() which connects the SpatialReal WebSocket.
+    if (avatarProviderRef.current === "spatialreal") {
+      try {
+        await spatialReal.start();
+      } catch (err) {
         console.error("[App] SpatialReal start failed:", err);
-      });
+      }
     }
     socket.sendStartLesson();
   }, [socket, store, avatarState, avatarProvider, spatialReal]);
