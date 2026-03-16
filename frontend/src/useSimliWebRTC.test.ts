@@ -3,26 +3,15 @@
  *
  * Verifies:
  * - connect() returns false when signaling WebSocket is null or closed
- * - connect() creates RTCPeerConnection + DataChannel and sends SDP offer
+ * - connect() creates a recvonly RTCPeerConnection and sends SDP offer
  * - simli:sdp-answer event triggers setRemoteDescription and setConfiguration
- * - sendAudio() forwards bytes via DataChannel when open, no-ops otherwise
- * - disconnect() closes PeerConnection + DataChannel and fires onClose
+ * - sendAudio() is a safe no-op in custom mode
+ * - disconnect() closes PeerConnection and fires onClose
  * - Mock mode: connect() returns true immediately without WebRTC
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useSimliWebRTC } from "./useSimliWebRTC";
-
-// ── Mock DataChannel ──────────────────────────────────────────────────────
-
-class MockDataChannel {
-  readyState = "open";
-  send = vi.fn();
-  close = vi.fn();
-  onopen: (() => void) | null = null;
-  onclose: (() => void) | null = null;
-  onerror: ((e: unknown) => void) | null = null;
-}
 
 // ── Mock RTCPeerConnection ────────────────────────────────────────────────
 
@@ -36,8 +25,6 @@ class MockRTCPeerConnection {
   ontrack: ((e: unknown) => void) | null = null;
   oniceconnectionstatechange: (() => void) | null = null;
 
-  _dc = new MockDataChannel();
-
   constructor(_config?: unknown) {
     MockRTCPeerConnection.instances.push(this);
   }
@@ -48,7 +35,6 @@ class MockRTCPeerConnection {
   });
   setRemoteDescription = vi.fn(async () => {});
   setConfiguration = vi.fn();
-  createDataChannel = vi.fn(() => this._dc);
   addTransceiver = vi.fn();
   close = vi.fn();
   removeEventListener = vi.fn();
@@ -111,7 +97,7 @@ describe("useSimliWebRTC", () => {
       expect(MockRTCPeerConnection.instances).toHaveLength(0);
     });
 
-    it("creates PC + DataChannel, sends SDP offer via WS, returns true", async () => {
+    it("creates a recvonly PC, sends SDP offer via WS, returns true", async () => {
       const ws = makeOpenWs();
       const { result } = renderHook(() =>
         useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
@@ -123,9 +109,8 @@ describe("useSimliWebRTC", () => {
       expect(MockRTCPeerConnection.instances).toHaveLength(1);
 
       const pc = MockRTCPeerConnection.instances[0];
-      expect(pc.createDataChannel).toHaveBeenCalledWith("audio", { ordered: true });
-      expect(pc.addTransceiver).toHaveBeenCalledWith("video", { direction: "recvonly" });
       expect(pc.addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+      expect(pc.addTransceiver).toHaveBeenCalledWith("video", { direction: "recvonly" });
 
       expect((ws.send as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
       const sent = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string);
@@ -224,52 +209,17 @@ describe("useSimliWebRTC", () => {
   });
 
   describe("sendAudio()", () => {
-    it("sends bytes via DataChannel when open", async () => {
+    it("is a no-op after connect()", async () => {
       const ws = makeOpenWs();
       const { result } = renderHook(() =>
         useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
       );
       await act(async () => { await result.current.connect(); });
-      const dc = MockRTCPeerConnection.instances[0]._dc;
 
       const audio = new Uint8Array([1, 2, 3, 4]);
-      act(() => { result.current.sendAudio(audio); });
-
-      expect(dc.send).toHaveBeenCalledWith(audio);
-    });
-
-    it("buffers bytes until the DataChannel opens", async () => {
-      const ws = makeOpenWs();
-      const { result } = renderHook(() =>
-        useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
-      );
-      await act(async () => { await result.current.connect(); });
-      const dc = MockRTCPeerConnection.instances[0]._dc;
-      dc.readyState = "connecting";
-
-      const audio = new Uint8Array([1, 2, 3, 4]);
-      act(() => { result.current.sendAudio(audio); });
-      expect(dc.send).not.toHaveBeenCalledWith(audio);
-
-      act(() => {
-        dc.readyState = "open";
-        dc.onopen?.();
-      });
-
-      expect(dc.send).toHaveBeenCalledWith(audio);
-    });
-
-    it("is a no-op when DataChannel readyState is not 'open'", async () => {
-      const ws = makeOpenWs();
-      const { result } = renderHook(() =>
-        useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
-      );
-      await act(async () => { await result.current.connect(); });
-      MockRTCPeerConnection.instances[0]._dc.readyState = "closed";
-
-      act(() => { result.current.sendAudio(new Uint8Array([1, 2, 3])); });
-
-      expect(MockRTCPeerConnection.instances[0]._dc.send).not.toHaveBeenCalled();
+      expect(() => {
+        act(() => { result.current.sendAudio(audio); });
+      }).not.toThrow();
     });
 
     it("is a no-op before connect() is called (no crash)", () => {
@@ -282,18 +232,16 @@ describe("useSimliWebRTC", () => {
   });
 
   describe("disconnect()", () => {
-    it("closes PeerConnection and DataChannel", async () => {
+    it("closes PeerConnection", async () => {
       const ws = makeOpenWs();
       const { result } = renderHook(() =>
         useSimliWebRTC({ getSignalingWs: () => ws, onStream: vi.fn() })
       );
       await act(async () => { await result.current.connect(); });
       const pc = MockRTCPeerConnection.instances[0];
-      const dc = pc._dc;
 
       act(() => { result.current.disconnect(); });
 
-      expect(dc.close).toHaveBeenCalled();
       expect(pc.close).toHaveBeenCalled();
     });
 

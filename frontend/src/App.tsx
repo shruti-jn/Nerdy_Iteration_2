@@ -48,7 +48,6 @@ export function App() {
   // always read the latest value. State alone is stale inside closures that
   // run synchronously after setAvatarProvider.
   const avatarProviderRef = useRef<AvatarProvider>(initialProvider);
-  const simliModeRef = useRef<"custom" | "sdk">("custom");
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -203,10 +202,6 @@ export function App() {
       if (avatarProviderRef.current === "spatialreal") {
         // Forward TTS audio to SpatialReal SDK for lip-sync
         spatialReal.sendAudio(pcm.buffer as ArrayBuffer, false);
-      } else if (simliModeRef.current === "sdk") {
-        // SDK mode pushes tutor audio directly from the browser to Simli.
-        simliControllerRef.current?.sendAudio(pcm);
-
       }
     },
     shouldPlayAudioChunk: () => avatarProviderRef.current !== "spatialreal",

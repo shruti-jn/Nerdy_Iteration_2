@@ -34,7 +34,7 @@ export interface SimliWebRTC {
   connect(): Promise<boolean>;
   /** Close the peer connection */
   disconnect(): void;
-  /** Send PCM Int16 audio data to Simli via the WebRTC DataChannel */
+  /** No-op in custom mode; Simli audio is sent by the backend signaling bridge. */
   sendAudio(data: Uint8Array): void;
   readonly isConnected: boolean;
 }
@@ -51,18 +51,9 @@ export interface SimliWebRTC {
  *  6. Set remote description; ICE negotiation completes automatically
  *  7. ontrack fires → call opts.onStream(stream)
  */
-// 10 ms of silence at 16 kHz mono PCM16 = 320 bytes (160 samples × 2 bytes).
-// Sent periodically to prevent Simli from closing the DataChannel due to inactivity.
-const SILENT_FRAME = new Uint8Array(320);
-const DC_KEEPALIVE_INTERVAL_MS = 3_000;
-const MAX_PENDING_AUDIO_CHUNKS = 64;
-
 export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   const pcRef = useRef<RTCPeerConnection | null>(null);
-  const dcRef = useRef<RTCDataChannel | null>(null);
   const connectedRef = useRef(false);
-  const pendingAudioRef = useRef<Uint8Array[]>([]);
-  const pendingAudioWarnedRef = useRef(false);
 
   // ── Stabilize opts via ref so callbacks don't depend on object identity ──
   // Without this, disconnect/connect are recreated every render because opts
@@ -71,92 +62,17 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  // Track whether we've warned about DC not being open (avoid spamming console)
-  const dcWarnedRef = useRef(false);
-
-  // Keepalive interval for the DataChannel — sends silent PCM frames every 3 s
-  // to prevent Simli from closing the DC due to inactivity between turns.
-  const keepaliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopKeepalive = useCallback(() => {
-    if (keepaliveRef.current !== null) {
-      clearInterval(keepaliveRef.current);
-      keepaliveRef.current = null;
-    }
-  }, []);
-
-  const startKeepalive = useCallback(() => {
-    stopKeepalive();
-    keepaliveRef.current = setInterval(() => {
-      const dc = dcRef.current;
-      if (dc && dc.readyState === "open") {
-        dc.send(SILENT_FRAME as unknown as Uint8Array<ArrayBuffer>);
-      } else {
-        // DC is no longer open — stop sending keepalives
-        stopKeepalive();
-      }
-    }, DC_KEEPALIVE_INTERVAL_MS);
-  }, [stopKeepalive]);
-
-  const sendAudio = useCallback((data: Uint8Array) => {
-    const dc = dcRef.current;
-    if (dc && dc.readyState === "open") {
-      dcWarnedRef.current = false;
-      pendingAudioWarnedRef.current = false;
-      // Cast required: RTCDataChannel.send() types buffer as ArrayBuffer (not SharedArrayBuffer),
-      // but Uint8Array's .buffer is typed as ArrayBufferLike in newer TS lib.dom.d.ts.
-      dc.send(data as unknown as Uint8Array<ArrayBuffer>);
-      return;
-    }
-
-    if (pcRef.current) {
-      const pending = pendingAudioRef.current;
-      pending.push(data.slice());
-      if (pending.length > MAX_PENDING_AUDIO_CHUNKS) {
-        pending.shift();
-        if (!pendingAudioWarnedRef.current) {
-          console.warn(ts(), "[SimliWebRTC] sendAudio: pending buffer full — dropping oldest lip-sync chunks");
-          pendingAudioWarnedRef.current = true;
-        }
-      }
-    }
-
-    if (!dcWarnedRef.current) {
-      console.warn(ts(), "[SimliWebRTC] sendAudio: DataChannel not open (state:", dc?.readyState ?? "null", ") — buffering lip-sync audio");
-      dcWarnedRef.current = true;
-    }
-  }, []);
-
-  const flushPendingAudio = useCallback(() => {
-    const dc = dcRef.current;
-    if (!dc || dc.readyState !== "open") {
-      return;
-    }
-    const pending = pendingAudioRef.current;
-    if (pending.length === 0) {
-      return;
-    }
-
-    console.log(ts(), `[SimliWebRTC] Flushing ${pending.length} buffered lip-sync chunk(s)`);
-    for (const chunk of pending) {
-      dc.send(chunk as unknown as Uint8Array<ArrayBuffer>);
-    }
-    pending.length = 0;
-    dcWarnedRef.current = false;
-    pendingAudioWarnedRef.current = false;
+  const sendAudio = useCallback((_data: Uint8Array) => {
+    // Custom Simli mode sends PCM through the backend's persistent signaling
+    // WebSocket. The browser peer connection is recvonly video/audio.
   }, []);
 
   const disconnect = useCallback(() => {
-    stopKeepalive();
-    pendingAudioRef.current = [];
-    pendingAudioWarnedRef.current = false;
-    dcRef.current?.close();
-    dcRef.current = null;
     pcRef.current?.close();
     pcRef.current = null;
     connectedRef.current = false;
     optsRef.current.onClose?.();
-  }, [stopKeepalive]);
+  }, []);
 
   const connect = useCallback(async (): Promise<boolean> => {
     if (optsRef.current._useMock) {
@@ -173,11 +89,6 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     // Clean up any previous failed attempt before starting fresh
     if (pcRef.current) {
       console.log(ts(), "[SimliWebRTC] Cleaning up stale PeerConnection before reconnect");
-      stopKeepalive();
-      pendingAudioRef.current = [];
-      pendingAudioWarnedRef.current = false;
-      dcRef.current?.close();
-      dcRef.current = null;
       pcRef.current.close();
       pcRef.current = null;
       connectedRef.current = false;
@@ -185,35 +96,18 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
 
     console.log(ts(), "[SimliWebRTC] Starting WebRTC handshake...");
 
-    // Start with default STUN; server will provide Simli's ICE servers in the answer
+    // Match Simli's official P2P client: unified-plan + recvonly audio/video.
     const pc = new RTCPeerConnection({
+      sdpSemantics: "unified-plan",
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
       ],
-    });
+    } as RTCConfiguration & { sdpSemantics?: string });
     pcRef.current = pc;
 
-    // Create DataChannel for sending PCM audio to Simli (must be created
-    // BEFORE the SDP offer so it's included in the offer's media description).
-    // Simli's servers expect audio data on a DataChannel labelled "audio".
-    const dc = pc.createDataChannel("audio", { ordered: true });
-    dcRef.current = dc;
-
-    dc.onopen = () => {
-      console.log(ts(), "[SimliWebRTC] DataChannel open — ready to send audio");
-      dcWarnedRef.current = false;
-      startKeepalive();
-      flushPendingAudio();
-    };
-    dc.onclose = () => {
-      console.warn(ts(), "[SimliWebRTC] DataChannel closed — lip-sync audio will be dropped until reconnect");
-      stopKeepalive();
-    };
-    dc.onerror = (err) => console.error(ts(), "[SimliWebRTC] DataChannel error:", err);
-
     // Receive avatar video + audio from Simli
-    pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTransceiver("audio", { direction: "recvonly" });
+    pc.addTransceiver("video", { direction: "recvonly" });
 
     const remoteStream = new MediaStream();
 
@@ -286,7 +180,6 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
       console.warn(ts(), "[SimliWebRTC] WebSocket died during ICE gathering — aborting");
       pc.close();
       pcRef.current = null;
-      dcRef.current = null;
       return false;
     }
 
@@ -297,7 +190,7 @@ export function useSimliWebRTC(opts: SimliWebRTCOptions): SimliWebRTC {
     );
     console.log(ts(), "[SimliWebRTC] SDP offer sent to server");
     return true;
-  }, [disconnect, stopKeepalive, startKeepalive, flushPendingAudio]);
+  }, [disconnect]);
 
   // Only clean up on unmount — disconnect is now stable (no deps on opts)
   // so this effect won't re-run on re-renders.

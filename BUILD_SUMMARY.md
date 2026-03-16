@@ -1657,3 +1657,43 @@ How: Traced the Newton scene definitions and visual step registry, then reviewed
 **How:** Distinguished error categories in `_parse_answer_sdp`: if the payload starts with `ERROR:` or `ERROR ` (case-insensitive), raise `_FatalHandshakeResponseError`; otherwise follow the existing retryable/fatal JSON-parse path. The retry loop now has an explicit `except _FatalHandshakeResponseError` arm that logs and re-raises as `AdapterError` immediately. Added 2 new tests: one for `ERROR: SERVER ERROR IN INITIALIZATION` (verifies connect_mock called exactly once), one for lowercase `error:` prefix. All 371 backend tests pass.
 
 **Refs:** `backend/adapters/avatar_adapter.py:57-67`, `backend/adapters/avatar_adapter.py:278-315`, `backend/adapters/avatar_adapter.py:341-357`, `backend/tests/test_avatar_adapter.py:477-520`
+
+---
+
+## Audit: Simli avatar not loading
+
+**What:** Audited the Simli startup path without changing runtime behavior and identified the failure as a provider/config issue, not a frontend WebRTC bug.
+
+**Why:** The avatar was stalling on "Loading avatar" and falling back after Simli returned `ERROR: SERVER ERROR IN INITIALIZATION` during the SDP handshake.
+
+**How:** Traced the flow from [`frontend/src/useSimliWebRTC.ts`](/Users/shruti/Software/Nerdy_Iteration_2/frontend/src/useSimliWebRTC.ts) through [`backend/main.py`](/Users/shruti/Software/Nerdy_Iteration_2/backend/main.py) into [`backend/adapters/avatar_adapter.py`](/Users/shruti/Software/Nerdy_Iteration_2/backend/adapters/avatar_adapter.py), reproduced the exact error with the backend’s active config, confirmed the backend is loading `backend/.env` via [`backend/config.py`](/Users/shruti/Software/Nerdy_Iteration_2/backend/config.py), and verified against Simli that the loaded `SIMLI_FACE_ID` is `not_found` for that API key while `/faces` returns no faces for the account.
+
+---
+
+## Fix: Simli avatar handshake + face config
+
+**What:** Fixed Simli custom-mode startup by aligning the WebRTC offer/signaling flow with Simli’s official p2p client and swapping the local backend face to a valid Simli preset face.
+
+**Why:** The app was sending a custom-mode offer shape that Simli rejects with `ERROR: SERVER ERROR IN INITIALIZATION`, and `backend/.env` was also pointing at a dead face ID.
+
+**How:** Removed the custom-mode browser DataChannel path in `frontend/src/useSimliWebRTC.ts`, changed the offer to recvonly audio/video in Simli’s ordering, updated `backend/adapters/avatar_adapter.py` to open `/compose/webrtc/p2p?...&enableSFU=false`, added a regression test for that URL, updated `backend/.env` to Simli’s `Hank` preset face, and verified the live adapter handshake succeeds (`answer_len=3934`, 4 ICE servers). Frontend `useSimliWebRTC` tests, `App.avatar-lifecycle` tests, frontend typecheck, and backend avatar adapter tests all pass.
+
+---
+
+## Audit: Simli env source confirmation
+
+**What:** Confirmed which Simli account/key the backend is actually loading from local `.env` files.
+
+**Why:** The active backend key needed to be distinguished from the root `.env` key to explain why the user’s Simli Studio account screenshot and the app behavior looked inconsistent.
+
+**How:** Read both `.env` and `backend/.env`, confirmed `backend/.env` contains the `9yq4...o0hk` key from the Simli Studio screenshot while the root `.env` contains a different Simli account, and re-checked the active backend account against Simli APIs (`/faces` returns `[]`, `getRequestStatus` reports `not_found` for the configured face ID).
+
+---
+
+## Verification: live Simli end-to-end canary
+
+**What:** Ran the real Playwright live-canary end-to-end suite against the local frontend and backend and confirmed the Simli avatar loads through the lesson flow.
+
+**Why:** The user asked for an actual end-to-end validation after the Simli handshake and config fixes.
+
+**How:** Executed `npm run e2e:live` in `frontend/`; both live tests passed in 22s. Reviewed the generated evidence screenshots and confirmed the getting-ready screen reached `Ready!` with the avatar visible and the lesson view rendered live avatar video (`frontend/e2e/evidence/live-02-getting-ready.png`, `frontend/e2e/evidence/live-05-mic-enabled.png`).

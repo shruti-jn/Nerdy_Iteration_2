@@ -17,12 +17,6 @@ let spatialStartSpy: ReturnType<typeof vi.fn>;
 let spatialSendAudioSpy: ReturnType<typeof vi.fn>;
 let spatialConnectedSetter: ((value: boolean) => void) | null;
 let simliRtcSendAudioSpy: ReturnType<typeof vi.fn>;
-let simliSdkConnectSpy: ReturnType<typeof vi.fn>;
-let simliSdkDisconnectSpy: ReturnType<typeof vi.fn>;
-let simliSdkSendAudioSpy: ReturnType<typeof vi.fn>;
-let simliSdkSetSessionSpy: ReturnType<typeof vi.fn>;
-let simliSdkClearBufferSpy: ReturnType<typeof vi.fn>;
-let mockSimliMode: "custom" | "sdk" = "custom";
 let simliConnected = false;
 let startLessonHadAttachedLessonVideo = false;
 let latestTutorSocketOpts:
@@ -141,12 +135,6 @@ describe("App avatar lifecycle", () => {
     spatialSendAudioSpy = vi.fn();
     spatialConnectedSetter = null;
     simliRtcSendAudioSpy = vi.fn();
-    simliSdkConnectSpy = vi.fn(async () => true);
-    simliSdkDisconnectSpy = vi.fn(async () => {});
-    simliSdkSendAudioSpy = vi.fn();
-    simliSdkSetSessionSpy = vi.fn();
-    simliSdkClearBufferSpy = vi.fn();
-    mockSimliMode = "custom";
     simliConnected = false;
     startLessonHadAttachedLessonVideo = false;
     latestTutorSocketOpts = null;
@@ -269,27 +257,6 @@ describe("App avatar lifecycle", () => {
 
     expect(simliRtcSendAudioSpy).not.toHaveBeenCalled();
   });
-
-  it("does not route Simli tutor audio through the browser sender when mode is custom", async () => {
-    mockAvatarProvider = "simli";
-    mockSimliMode = "custom";
-
-    render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: /Start Photosynthesis/i }));
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    });
-
-    act(() => {
-      latestTutorSocketOpts?.onAudioChunk?.(new Uint8Array([4, 5, 6]));
-    });
-
-    expect(simliRtcSendAudioSpy).not.toHaveBeenCalled();
-    expect(simliSdkSendAudioSpy).not.toHaveBeenCalled();
-  });
-
 
   it("keeps the Simli stream attached when restarting a restored lesson", async () => {
     mockSessionKind = "restore";

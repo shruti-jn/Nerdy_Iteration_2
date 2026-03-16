@@ -360,6 +360,31 @@ class TestConnect:
         assert sent == {"type": "offer", "sdp": "v=0 my-offer"}
 
     @pytest.mark.asyncio
+    async def test_connect_opens_p2p_socket_with_sfu_disabled(self):
+        """connect() must append enableSFU=false to match Simli's official p2p client."""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(
+            side_effect=["START", '{"type": "answer", "sdp": "v=0 answer..."}']
+        )
+        mock_ws.send = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok-sfu", [])
+            connect_mock = AsyncMock(return_value=mock_ws)
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                await adapter.connect("v=0 offer...")
+
+        connect_url = connect_mock.await_args.args[0]
+        assert connect_url == (
+            "wss://api.simli.ai/compose/webrtc/p2p"
+            "?session_token=tok-sfu&enableSFU=false"
+        )
+
+    @pytest.mark.asyncio
     async def test_connect_timeout_raises_adapter_error(self):
         """connect() retries transient timeouts, then raises AdapterError if they persist."""
         from adapters.avatar_adapter import SimliAvatarAdapter

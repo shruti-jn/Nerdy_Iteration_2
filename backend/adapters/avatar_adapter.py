@@ -39,6 +39,7 @@ _SIMLI_BASE_URL = "https://api.simli.ai"
 _TOKEN_ENDPOINT = f"{_SIMLI_BASE_URL}/compose/token"
 _ICE_ENDPOINT = f"{_SIMLI_BASE_URL}/compose/ice"
 _WS_BASE_URL = "wss://api.simli.ai/compose/webrtc/p2p"
+_ENABLE_SFU = False
 
 _SESSION_INIT_TIMEOUT_S = 10.0
 _WS_CONNECT_TIMEOUT_S = 10.0
@@ -197,7 +198,12 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
         # With pings enabled but no timeout, the pings themselves act as
         # traffic that prevents intermediary timeouts, and our
         # _is_ws_alive() transport check catches true dead connections.
-        url = f"{_WS_BASE_URL}?session_token={self._session_token}"
+        # Match Simli's official p2p client: the signaling socket explicitly
+        # opts out of SFU mode for the legacy custom WebRTC bridge.
+        url = (
+            f"{_WS_BASE_URL}?session_token={self._session_token}"
+            f"&enableSFU={str(_ENABLE_SFU).lower()}"
+        )
         self._ws = await asyncio.wait_for(
             websockets.connect(url, ping_interval=20, ping_timeout=None),
             timeout=_WS_CONNECT_TIMEOUT_S,
