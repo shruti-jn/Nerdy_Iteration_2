@@ -1,5 +1,10 @@
+# fly.toml app configuration file generated for nerdy-tutor on 2026-03-16T02:43:21Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'nerdy-tutor'
-primary_region = 'sjc'
+primary_region = 'iad'
 
 [build]
 
@@ -9,23 +14,10 @@ primary_region = 'sjc'
   auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-
-  [http_service.concurrency]
-    type = 'connections'
-    hard_limit = 25
-    soft_limit = 20
+  processes = ['app']
 
 [[vm]]
-  memory = '512mb'
+  memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-
-[checks]
-  [checks.health]
-    port = 8000
-    type = 'http'
-    interval = '15s'
-    timeout = '2s'
-    grace_period = '10s'
-    method = 'GET'
-    path = '/health'
+  memory_mb = 1024
