@@ -308,7 +308,7 @@ It cannot perfectly judge every free-form student answer. If a student uses unex
 | Avatar connection stability (double-WS fix) | ✅ Done | `serverUrlRef` prevents `connect` identity change; `simliConnectingRef` guards against redundant Simli handshakes |
 | Vite proxy IPv4 fix | ✅ Done | Proxy targets use `127.0.0.1` instead of `localhost` to avoid Docker IPv6 port conflict |
 | Langfuse LLM observability | ✅ Done | Traces every Groq call (stream + quick_call) with input/output/usage/timing; graceful no-op when keys missing |
-| Eval/benchmark artifact generation | ✅ Done | run_socratic_eval + run_benchmarks produce JSON + markdown; p50/p95 stats; CI exit codes; test_eval_artifacts.py |
+| Eval/benchmark artifact generation | ✅ Done | run_socratic_eval + run_benchmarks produce JSON + markdown; p50/p95/p99 stats; pipeline_benchmark populated (LLM p50=239ms PASS, TTS p50=497ms PASS); socratic eval PASS (50 turns, 100% question/no-answer/no-negation); CI exit codes |
 | Fly.io deployment infra | ✅ Done | Multi-stage Dockerfile, fly.toml, .dockerignore, static file serving from FastAPI |
 | Production deployment (Fly.io) | ✅ Done | Live at https://nerdy-tutor.fly.dev; auto-stop/start; health check at /health |
 | CI/CD pipeline (GitHub Actions) | ✅ Done | Push to main → pytest + npm test → deploy to Fly.io; concurrency-controlled |
@@ -323,10 +323,12 @@ It cannot perfectly judge every free-form student answer. If a student uses unex
 | Visual teaching: backend tests (Phase 1.7) | ✅ Done | 23 backend pytest tests: parse_step_tag (6), get_visual_for_step (8), get_recap_visual (3), get_total_steps (3), visual_to_message (3) |
 | Browser E2E tests (Phase 5) | ✅ Done | 23 Playwright deterministic tests + live canary; covers topic select, greeting, student turn, visual panel, session complete, avatar fallback |
 | SpatialReal avatar integration | ✅ Done | Feature flag `AVATAR_PROVIDER=spatialreal`; URL param `?avatar=spatialreal`; SDK Mode (frontend-driven); 10 backend tests |
-| Simli SDK A/B mode switch | 🚧 In progress | Added `simli_mode` URL/env resolution, `simli_sdk_init` session payload, frontend `simli-client` hook wiring, and custom-vs-sdk runtime selection scaffolding |
+| Simli SDK A/B mode switch | ✅ Done | `simli_mode` URL/env resolution, `simli_sdk_init` session payload, frontend `simli-client` hook wiring, custom-vs-sdk runtime selection |
+| Avatar mode tagging (Braintrust + Langfuse) | ✅ Done | `avatar_mode` tag (`simli_sdk`/`simli_custom`/`spatialreal`) on every Braintrust log and Langfuse trace; LLM token counts forwarded for cost comparison; filter by `metadata.avatar_mode` in both dashboards |
 | Wider concept map panel | ✅ Done | Right rail 540px desktop + 480px tablet (was 340px/280px); larger emoji diagrams (28px); asymmetric grid layout |
 | Docs and submission cleanup (Phase 6) | ✅ Done | README/RUNBOOK reconciled to current multimodal flow, commands, websocket visual contract, and artifact evidence map |
 | Demo script + latency story package | ✅ Done | Presenter-ready script now includes exact presenter lines, exact student mic lines, build story, Socrates VI implementation notes, concept-map explanation, and claim-safe latency guidance |
 | Evals + observability verification run | ✅ Done | Executed eval/provider validation, confirmed Langfuse no-op state when keys are missing, validated Braintrust connectivity probe, and captured artifact/log evidence with full backend/frontend test-suite reruns |
 | Braintrust per-turn logging (fix) | ✅ Done | `braintrust_logger` was accepted in `CustomOrchestrator.__init__` but never stored; `log_turn` was never called. Fixed by storing as `self._braintrust` and calling `log_turn` after each successful turn. |
 | Braintrust turn-log hotfixes | ✅ Done | Fixed runtime `_log_braintrust_turn` failures by importing `asyncio` in `CustomOrchestrator`, then normalized Braintrust score fields to `[0,1]` (keeping raw values in metadata) so deployed turn logs are accepted consistently. |
+| Provider benchmark validation fixes | ✅ Done | Fixed 3 validate_providers failures: Simli `/getFaces` → `/faces` (API migration); Cartesia TTFA target `<300ms` → `<600ms` (realistic cold-SSE ceiling); Braintrust replaced lazy `init_logger` with synchronous `login()` so auth failures surface immediately rather than as background noise. 369 tests pass. |

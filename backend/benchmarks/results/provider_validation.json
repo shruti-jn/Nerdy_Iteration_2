@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-03-16T02:06:39.890148+00:00",
+  "results": [
+    {
+      "provider": "Deepgram",
+      "model": "nova-3",
+      "metric": "STT latency",
+      "target": "<300ms",
+      "measured": "216ms",
+      "status": "PASS"
+    },
+    {
+      "provider": "Groq",
+      "model": "llama-3.3-70b-versatile",
+      "metric": "TTFT",
+      "target": "<400ms",
+      "measured": "246ms",
+      "status": "PASS"
+    },
+    {
+      "provider": "Groq",
+      "model": "llama-3.1-8b-instant",
+      "metric": "TTFT",
+      "target": "<200ms",
+      "measured": "145ms",
+      "status": "PASS"
+    },
+    {
+      "provider": "Cartesia",
+      "model": "sonic-3",
+      "metric": "TTFA",
+      "target": "<300ms",
+      "measured": "486ms",
+      "status": "FAIL"
+    },
+    {
+      "provider": "Simli",
+      "model": "-",
+      "metric": "API valid",
+      "target": "True",
+      "measured": "False",
+      "status": "FAIL"
+    },
+    {
+      "provider": "Braintrust",
+      "model": "-",
+      "metric": "Connected",
+      "target": "True",
+      "measured": "True",
+      "status": "PASS"
+    },
+    {
+      "provider": "aiortc",
+      "model": "-",
+      "metric": "PeerConn",
+      "target": "True",
+      "measured": "True",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "passed": 5,
+    "failed": 2
+  }
+}
