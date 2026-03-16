@@ -9,6 +9,13 @@ function fmt(ms: number | null): string {
   return ms !== null ? `${Math.round(ms)}ms` : "—";
 }
 
+/** Format signed metrics with explicit + prefix for positive values. */
+function fmtSigned(ms: number | null): string {
+  if (ms === null) return "—";
+  const sign = ms > 0 ? "+" : "";
+  return `${sign}${Math.round(ms)}ms`;
+}
+
 /** Returns true when `ms` is >20% worse than `prev`. */
 function isRegression(ms: number | null, prev: number | null): boolean {
   if (ms === null || prev === null || prev === 0) return false;
@@ -40,6 +47,9 @@ export function LatencyTrend({ history }: Props) {
         <span role="columnheader">LLM</span>
         <span role="columnheader">TTS</span>
         <span role="columnheader">Total</span>
+        <span role="columnheader" title="Mic release → first audio byte played">E2E</span>
+        <span role="columnheader" title="Mic release → last audio chunk played">Done</span>
+        <span role="columnheader" title="Lip-sync offset (T_video − T_audio)">Sync</span>
       </div>
       {history.map((entry, idx) => {
         const prev = idx > 0 ? history[idx - 1]! : null;
@@ -74,6 +84,21 @@ export function LatencyTrend({ history }: Props) {
                   {arrow(entry.total_ms, prev.total_ms)}
                 </span>
               )}
+            </span>
+            <span
+              className={`latency-trend__cell${isRegression(entry.e2e_ms, prev?.e2e_ms ?? null) ? " latency-trend__cell--red" : ""}`}
+              role="cell"
+            >
+              {fmt(entry.e2e_ms)}
+            </span>
+            <span
+              className={`latency-trend__cell${isRegression(entry.response_complete_ms, prev?.response_complete_ms ?? null) ? " latency-trend__cell--red" : ""}`}
+              role="cell"
+            >
+              {fmt(entry.response_complete_ms)}
+            </span>
+            <span className="latency-trend__cell" role="cell">
+              {fmtSigned(entry.lip_sync_ms)}
             </span>
           </div>
         );

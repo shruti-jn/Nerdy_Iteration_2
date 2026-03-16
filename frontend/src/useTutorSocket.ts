@@ -37,6 +37,9 @@ export interface TutorSocketOptions {
   onSpatialRealInit?: (sessionToken: string, appId: string, avatarId: string) => void;
   /** Called when the backend sends simli_sdk_init with token and ICE config */
   onSimliSdkInit?: (sessionToken: string, iceServers: RTCIceServer[] | null) => void;
+  /** Called with the wall-clock timestamp (Date.now()) when the first audio byte of a turn
+   *  starts playing in the browser. Used by App.tsx to compute lip-sync offset. */
+  onFirstAudioPlayed?: (tsMs: number) => void;
   /** Skip real WebSocket and simulate a fake tutor response (for local UI dev). Default false. */
   _useMock?: boolean;
 }
@@ -207,6 +210,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
   const audioGenRef = useRef(0);
   // Track time-to-first-audio on the frontend (mic release → first audio byte played)
   const firstAudioPlayedRef = useRef<boolean>(false);
+  // Stores the most recent frontend_e2e_ms so it can be included in the StageLatency entry
+  // when tutor_text_chunk timing arrives (which is after audio chunks).
+  const e2eMsRef = useRef<number | null>(null);
 
   function getAudioContext(): AudioContext {
     if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
@@ -251,9 +257,12 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
         // Record frontend e2e: mic release → first audio byte actually starts playing
         if (isFirst && turnStartRef.current > 0) {
-          const frontendE2eMs = Date.now() - turnStartRef.current;
+          const nowMs = Date.now();
+          const frontendE2eMs = nowMs - turnStartRef.current;
           console.log(ts(), `[TutorSocket] frontend_e2e_ms=${frontendE2eMs} (mic release → first audio played)`);
+          e2eMsRef.current = frontendE2eMs;
           optsRef.current.store.setLatency(frontendE2eMs);
+          optsRef.current.onFirstAudioPlayed?.(nowMs);
         }
 
         await new Promise<void>((resolve) => {
@@ -420,6 +429,10 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
             llm_ms: (msg.timing["llm_ttf_ms"] as number | null) ?? (msg.timing["llm_duration_ms"] as number | null) ?? null,
             tts_ms: (msg.timing["tts_ttf_ms"] as number | null) ?? (msg.timing["tts_duration_ms"] as number | null) ?? null,
             total_ms: (msg.timing["turn_duration_ms"] as number | null) ?? null,
+            // Frontend-measured fields — e2e was recorded when first audio_chunk played.
+            e2e_ms: e2eMsRef.current,
+            response_complete_ms: null as number | null,
+            lip_sync_ms: null as number | null,
           };
           store.setStageLatency(entry);
 
@@ -446,8 +459,29 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         for (const word of words) {
           store.appendStreamWord(word);
         }
+
+        // Capture turn start BEFORE zeroing so response_complete_ms can be measured
+        // as elapsed time from mic release to last audio chunk finishing.
+        const responseTurnStart = turnStartRef.current;
         // Reset turn timer (frontend e2e was already recorded on first audio_chunk)
         turnStartRef.current = 0;
+
+        // Chain onto playback queue: fires after the LAST audio chunk finishes playing.
+        if (responseTurnStart > 0) {
+          const capturedGen = audioGenRef.current;
+          const isGreetingTurn = msg.is_greeting ?? false;
+          playbackQueueRef.current = playbackQueueRef.current.then(() => {
+            // Skip if a barge-in reset the generation (stale turn).
+            if (audioGenRef.current !== capturedGen) return;
+            const responseCompleteMs = Date.now() - responseTurnStart;
+            console.log(ts(), `[TutorSocket] response_complete_ms=${responseCompleteMs} (mic release → last audio chunk)`);
+            optsRef.current.store.setResponseComplete(responseCompleteMs);
+            if (!isGreetingTurn) {
+              optsRef.current.store.updateLastLatencyHistory({ response_complete_ms: responseCompleteMs });
+            }
+          });
+        }
+
         clearResponseCommitTimer();
         responseCommitTimerRef.current = window.setTimeout(() => {
           store.setTurnInfo(turnNum, totalTurns);
@@ -508,6 +542,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         clearResponseCommitTimer();
         awaitingCommitTurnRef.current = null;
         pendingVisualRef.current = null;
+        e2eMsRef.current = null;
         pendingCompletionRef.current = null;
         store.bargeIn();
       } else if (msg.type === "error") {
@@ -531,6 +566,9 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
             llm_ms: (msg.timing["llm_ttf_ms"] as number | null) ?? (msg.timing["llm_duration_ms"] as number | null) ?? null,
             tts_ms: (msg.timing["tts_ttf_ms"] as number | null) ?? (msg.timing["tts_duration_ms"] as number | null) ?? null,
             total_ms: (msg.timing["turn_duration_ms"] as number | null) ?? null,
+            e2e_ms: e2eMsRef.current,
+            response_complete_ms: null as number | null,
+            lip_sync_ms: null as number | null,
           };
           store.setStageLatency(entry);
           // Update turn info from error timing if available
@@ -699,6 +737,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     // Cancel any queued audio chunks from the old connection.
     audioGenRef.current += 1;
     playbackQueueRef.current = Promise.resolve();
+    e2eMsRef.current = null;
     try { audioCtxRef.current?.close(); } catch { /* may already be closed */ }
     audioCtxRef.current = null;
   }, []);
@@ -792,6 +831,7 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
     }
     turnStartRef.current = Date.now();
     firstAudioPlayedRef.current = false;  // Reset for new turn
+    e2eMsRef.current = null;              // Reset for new turn
     wsRef.current.send(JSON.stringify({ type: "end_of_utterance" }));
   }, []);
 

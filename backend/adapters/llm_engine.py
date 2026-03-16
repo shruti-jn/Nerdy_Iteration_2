@@ -41,6 +41,14 @@ class GroqLLMEngine(BaseLLMEngine):
         self._cancel_event = asyncio.Event()
         self._default_model = getattr(settings, "llm_model", "llama-3.3-70b-versatile")
         self._max_tokens = getattr(settings, "llm_max_tokens", 150)
+        self._last_usage: dict | None = None
+
+    @property
+    def last_usage(self) -> dict | None:
+        """Token usage from the most recent stream() call.
+        Keys: prompt_tokens, completion_tokens, total_tokens.
+        None if usage was not returned (e.g. cancelled before completion)."""
+        return self._last_usage
 
     async def stream(
         self,
@@ -67,6 +75,7 @@ class GroqLLMEngine(BaseLLMEngine):
             AdapterError: Wraps any Groq SDK exception.
         """
         self._cancel_event.clear()
+        self._last_usage = None
         messages = list(context) + [{"role": "user", "content": transcript}]
 
         try:
@@ -84,7 +93,15 @@ class GroqLLMEngine(BaseLLMEngine):
                 if self._cancel_event.is_set():
                     break
 
-                content = chunk.choices[0].delta.content
+                # Capture usage if the SDK populates it on a final chunk
+                if getattr(chunk, "usage", None) is not None:
+                    self._last_usage = {
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens,
+                    }
+
+                content = chunk.choices[0].delta.content if chunk.choices else None
                 if content is None:
                     continue
 

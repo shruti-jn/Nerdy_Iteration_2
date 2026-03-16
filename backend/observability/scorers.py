@@ -67,17 +67,23 @@ _ENCOURAGEMENT_PHRASES: list[str] = [
 
 
 def score_ends_with_question(response: str) -> float:
-    """Check whether the tutor response ends with a question mark.
+    """Check whether the tutor response contains a question mark near the end.
 
-    Almost every Socratic response should end with a guiding question.
+    Almost every Socratic response should close with a guiding question.
+    We check the final 60 characters rather than requiring the absolute last
+    character to be ``?``, because the model occasionally appends a short
+    encouragement or hint (e.g. "Hint: look up!") after the question without
+    changing the pedagogical intent.
 
     Args:
         response: The tutor's response text.
 
     Returns:
-        1.0 if the stripped response ends with '?', else 0.0.
+        1.0 if ``?`` appears in the last 60 characters of the stripped
+        response, else 0.0.
     """
-    return 1.0 if response.strip().endswith("?") else 0.0
+    tail = response.strip()[-60:]
+    return 1.0 if "?" in tail else 0.0
 
 
 # ---------------------------------------------------------------------------

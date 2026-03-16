@@ -89,6 +89,25 @@ def test_constructor_uses_explicit_avatar_provider(test_config):
     assert orchestrator._avatar_provider == "spatialreal"
 
 
+@pytest.mark.parametrize("avatar_provider,simli_mode,expected_avatar_mode", [
+    ("simli", "sdk", "simli_sdk"),
+    ("simli", "custom", "simli_custom"),
+    ("simli", None, "simli_custom"),       # None defaults to custom
+    ("spatialreal", None, "spatialreal"),
+    ("spatialreal", "sdk", "spatialreal"), # simli_mode irrelevant for spatialreal
+])
+def test_constructor_computes_avatar_mode(test_config, avatar_provider, simli_mode, expected_avatar_mode):
+    """_avatar_mode must be derived correctly from avatar_provider + simli_mode."""
+    orchestrator = CustomOrchestrator(
+        test_config,
+        "test-session",
+        AsyncMock(),
+        avatar_provider=avatar_provider,
+        simli_mode=simli_mode,
+    )
+    assert orchestrator._avatar_mode == expected_avatar_mode
+
+
 def test_build_turn_hint_uses_scaffold_level_and_blocks_teach_back_until_ready():
     progress = LessonProgressState(
         topic="photosynthesis",

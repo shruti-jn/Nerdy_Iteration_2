@@ -461,14 +461,18 @@ describe("T4-11: updateLastStudentUtterance replaces placeholder text", () => {
 describe("T4-12: LatencyPanel", () => {
   it("shows dashes when stageLatency is null", () => {
     render(<LatencyPanel stageLatency={null} />);
+    // 7 rows: STT, LLM, TTS, TOTAL, E2E, DONE, SYNC — all show em-dash when null
     const dashes = screen.getAllByText("—");
-    expect(dashes).toHaveLength(4);
+    expect(dashes).toHaveLength(7);
   });
 
   it("shows rounded ms values when stageLatency is provided", () => {
     render(
       <LatencyPanel
-        stageLatency={{ stt_ms: 142.7, llm_ms: 298.1, tts_ms: 88.4, total_ms: 540.0 }}
+        stageLatency={{
+          stt_ms: 142.7, llm_ms: 298.1, tts_ms: 88.4, total_ms: 540.0,
+          e2e_ms: null, response_complete_ms: null, lip_sync_ms: null,
+        }}
       />
     );
     expect(screen.getByText("143ms")).toBeInTheDocument();
@@ -477,26 +481,57 @@ describe("T4-12: LatencyPanel", () => {
     expect(screen.getByText("540ms")).toBeInTheDocument();
   });
 
+  it("shows e2e_ms and response_complete_ms when provided", () => {
+    render(
+      <LatencyPanel
+        stageLatency={{
+          stt_ms: null, llm_ms: null, tts_ms: null, total_ms: null,
+          e2e_ms: 380, response_complete_ms: 2400, lip_sync_ms: null,
+        }}
+      />
+    );
+    expect(screen.getByText("380ms")).toBeInTheDocument();
+    expect(screen.getByText("2400ms")).toBeInTheDocument();
+  });
+
+  it("shows signed lip_sync_ms with + prefix for positive values", () => {
+    render(
+      <LatencyPanel
+        stageLatency={{
+          stt_ms: null, llm_ms: null, tts_ms: null, total_ms: null,
+          e2e_ms: null, response_complete_ms: null, lip_sync_ms: 45,
+        }}
+      />
+    );
+    expect(screen.getByText("+45ms")).toBeInTheDocument();
+  });
+
   it("assigns green dot when all values are under green budget", () => {
-    // Budgets: STT<300, LLM<200, TTS<150, Total<500
+    // Budgets: STT<300, LLM<200, TTS<150, Total<500, E2E<500, DONE<3000, SYNC<80
     const { container } = render(
       <LatencyPanel
-        stageLatency={{ stt_ms: 100, llm_ms: 150, tts_ms: 80, total_ms: 400 }}
+        stageLatency={{
+          stt_ms: 100, llm_ms: 150, tts_ms: 80, total_ms: 400,
+          e2e_ms: 400, response_complete_ms: 2000, lip_sync_ms: 50,
+        }}
       />
     );
     const greenDots = container.querySelectorAll(".latency-panel__dot--green");
-    expect(greenDots.length).toBe(4);
+    expect(greenDots.length).toBe(7);
   });
 
   it("assigns red dot when values exceed yellow budget", () => {
-    // Budgets: STT>1000, LLM>400, TTS>300, Total>1000
+    // Budgets: STT>1000, LLM>400, TTS>300, Total>1000, E2E>1000, DONE>5000, SYNC>200
     const { container } = render(
       <LatencyPanel
-        stageLatency={{ stt_ms: 1200, llm_ms: 500, tts_ms: 400, total_ms: 1500 }}
+        stageLatency={{
+          stt_ms: 1200, llm_ms: 500, tts_ms: 400, total_ms: 1500,
+          e2e_ms: 1500, response_complete_ms: 6000, lip_sync_ms: 300,
+        }}
       />
     );
     const redDots = container.querySelectorAll(".latency-panel__dot--red");
-    expect(redDots.length).toBe(4);
+    expect(redDots.length).toBe(7);
   });
 });
 
@@ -513,8 +548,8 @@ describe("T4-13: LatencyTrend", () => {
     render(
       <LatencyTrend
         history={[
-          { turn: 1, stt_ms: 142, llm_ms: 298, tts_ms: 88, total_ms: 540 },
-          { turn: 2, stt_ms: 155, llm_ms: 312, tts_ms: 91, total_ms: 570 },
+          { turn: 1, stt_ms: 142, llm_ms: 298, tts_ms: 88, total_ms: 540, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
+          { turn: 2, stt_ms: 155, llm_ms: 312, tts_ms: 91, total_ms: 570, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
         ]}
       />
     );
@@ -523,12 +558,25 @@ describe("T4-13: LatencyTrend", () => {
     expect(screen.getByText("570ms")).toBeInTheDocument();
   });
 
+  it("renders e2e_ms and response_complete_ms columns", () => {
+    render(
+      <LatencyTrend
+        history={[
+          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400, e2e_ms: 350, response_complete_ms: 2200, lip_sync_ms: 40 },
+        ]}
+      />
+    );
+    expect(screen.getByText("350ms")).toBeInTheDocument();
+    expect(screen.getByText("2200ms")).toBeInTheDocument();
+    expect(screen.getByText("+40ms")).toBeInTheDocument();
+  });
+
   it("shows up-arrow when total_ms increases", () => {
     render(
       <LatencyTrend
         history={[
-          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400 },
-          { turn: 2, stt_ms: 120, llm_ms: 220, tts_ms: 90, total_ms: 500 },
+          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
+          { turn: 2, stt_ms: 120, llm_ms: 220, tts_ms: 90, total_ms: 500, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
         ]}
       />
     );
@@ -539,8 +587,8 @@ describe("T4-13: LatencyTrend", () => {
     render(
       <LatencyTrend
         history={[
-          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 500 },
-          { turn: 2, stt_ms: 90, llm_ms: 180, tts_ms: 70, total_ms: 400 },
+          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 500, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
+          { turn: 2, stt_ms: 90, llm_ms: 180, tts_ms: 70, total_ms: 400, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
         ]}
       />
     );
@@ -551,8 +599,8 @@ describe("T4-13: LatencyTrend", () => {
     const { container } = render(
       <LatencyTrend
         history={[
-          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400 },
-          { turn: 2, stt_ms: 130, llm_ms: 200, tts_ms: 80, total_ms: 420 }, // stt > 120 -> red
+          { turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null },
+          { turn: 2, stt_ms: 130, llm_ms: 200, tts_ms: 80, total_ms: 420, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null }, // stt > 120 -> red
         ]}
       />
     );
@@ -662,8 +710,8 @@ describe("T4-16: useSessionStore view/topic/greeting/reset", () => {
       result.current.setMode("student-speaking");
       result.current.addStudentUtterance("Hello");
       result.current.setLatency(400);
-      result.current.setStageLatency({ stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400 });
-      result.current.pushLatencyHistory({ turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400 });
+      result.current.setStageLatency({ stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null });
+      result.current.pushLatencyHistory({ turn: 1, stt_ms: 100, llm_ms: 200, tts_ms: 80, total_ms: 400, e2e_ms: null, response_complete_ms: null, lip_sync_ms: null });
       result.current.setError("test error");
       result.current.setTurnInfo(3, 15);
       result.current.setSessionComplete(true);

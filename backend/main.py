@@ -234,6 +234,7 @@ async def session_handler(ws: WebSocket):
         max_turns=MAX_TURNS,
         braintrust_logger=_braintrust,
         avatar_provider=avatar_provider,
+        simli_mode=simli_mode,
     )
     simli: SimliAvatarAdapter | None = None
     turn_queue: asyncio.Queue | None = None

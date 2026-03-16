@@ -29,6 +29,13 @@ export interface StageLatency {
   llm_ms: number | null;
   tts_ms: number | null;
   total_ms: number | null;
+  /** Mic release → first audio byte played in browser (frontend end-to-end). */
+  e2e_ms: number | null;
+  /** Mic release → last audio chunk finished playing (full response duration). */
+  response_complete_ms: number | null;
+  /** First avatar video frame timestamp minus first audio timestamp (ms, signed).
+   *  Positive = video arrived after audio (video lags). Negative = audio after video. */
+  lip_sync_ms: number | null;
 }
 
 export interface TurnLatency {
@@ -37,6 +44,12 @@ export interface TurnLatency {
   llm_ms: number | null;
   tts_ms: number | null;
   total_ms: number | null;
+  /** Mic release → first audio byte played (frontend e2e), per turn. */
+  e2e_ms: number | null;
+  /** Mic release → last audio chunk finished playing, per turn. */
+  response_complete_ms: number | null;
+  /** Lip-sync offset (T_video − T_audio), signed ms. Session-level proxy; null after first turn. */
+  lip_sync_ms: number | null;
 }
 
 export interface LessonVisualState {
@@ -82,6 +95,12 @@ export interface SessionStore {
   setLatency: (ms: number) => void;
   setStageLatency: (latency: StageLatency) => void;
   pushLatencyHistory: (entry: TurnLatency) => void;
+  /** Merge response_complete_ms into current stageLatency and last history entry. */
+  setResponseComplete: (ms: number) => void;
+  /** Merge lip_sync_ms into current stageLatency and last history entry. */
+  setLipSync: (ms: number) => void;
+  /** Patch the most-recent TurnLatency history entry with partial updates. */
+  updateLastLatencyHistory: (update: Partial<Omit<TurnLatency, "turn">>) => void;
   setError: (msg: string | null) => void;
   /** Update turn number and total from backend-provided values. */
   setTurnInfo: (turnNumber: number, totalTurns: number) => void;

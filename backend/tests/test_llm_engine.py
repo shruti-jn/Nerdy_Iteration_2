@@ -41,6 +41,7 @@ class _MockChoice:
 @dataclass
 class _MockChunk:
     choices: list = None
+    usage: object = None  # None on content chunks; set on final usage chunk
 
     def __post_init__(self):
         if self.choices is None:
@@ -196,6 +197,54 @@ class TestGroqLLMEngineStream:
 
         # Should have stopped early (got at most 2-3 tokens)
         assert len(tokens) <= 3
+
+    @pytest.mark.asyncio
+    async def test_last_usage_populated_from_usage_chunk(self):
+        """stream() must store token counts from the final usage chunk."""
+        engine = GroqLLMEngine(_FakeSettings())
+        mc = MetricsCollector()
+
+        # Simulate Groq streaming: content chunks followed by a usage-only chunk
+        mock_usage = MagicMock()
+        mock_usage.prompt_tokens = 50
+        mock_usage.completion_tokens = 20
+        mock_usage.total_tokens = 70
+
+        async def _stream_with_usage():
+            # Two regular content chunks
+            for text in ["Hello", " world"]:
+                chunk = _MockChunk()
+                chunk.choices[0].delta.content = text
+                yield chunk
+            # Final usage-only chunk (no content)
+            usage_chunk = _MockChunk(choices=[], usage=mock_usage)
+            yield usage_chunk
+
+        engine._client.chat.completions.create = AsyncMock(return_value=_stream_with_usage())
+
+        tokens = []
+        async for token in engine.stream("hi", [], mc):
+            tokens.append(token)
+
+        assert tokens == ["Hello", " world"]
+        assert engine.last_usage == {
+            "prompt_tokens": 50,
+            "completion_tokens": 20,
+            "total_tokens": 70,
+        }
+
+    @pytest.mark.asyncio
+    async def test_last_usage_is_none_when_no_usage_chunk(self):
+        """last_usage should be None if Groq returns no usage chunk."""
+        engine = GroqLLMEngine(_FakeSettings())
+        mc = MetricsCollector()
+
+        engine._client.chat.completions.create = AsyncMock(return_value=_mock_stream("Hi"))
+
+        async for _ in engine.stream("hi", [], mc):
+            pass
+
+        assert engine.last_usage is None
 
     @pytest.mark.asyncio
     async def test_context_passed_to_messages(self):

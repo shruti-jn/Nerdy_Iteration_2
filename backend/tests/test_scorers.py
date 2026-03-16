@@ -41,6 +41,24 @@ class TestEndsWithQuestion:
         """Trailing whitespace after '?' should not affect the result."""
         assert score_ends_with_question("What do you think?  ") == 1.0
 
+    def test_ends_with_question_hint_after_question(self) -> None:
+        """Model appends 'Hint: look up!' after the question — should still score 1.0."""
+        assert score_ends_with_question(
+            "Where does sunlight come from to make food? Hint: look up!"
+        ) == 1.0
+
+    def test_ends_with_question_no_question_at_all(self) -> None:
+        """No '?' anywhere near the end should score 0.0."""
+        assert score_ends_with_question(
+            "Plants use sunlight, water, and carbon dioxide. That is photosynthesis."
+        ) == 0.0
+
+    def test_ends_with_question_question_far_from_end(self) -> None:
+        """A '?' only at the very start, with a long declarative tail, scores 0.0."""
+        assert score_ends_with_question(
+            "?" + "x" * 80 + " That is the answer and it ends here."
+        ) == 0.0
+
 
 # ---------------------------------------------------------------------------
 # 2. score_no_direct_answer

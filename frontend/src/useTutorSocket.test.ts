@@ -79,6 +79,9 @@ function makeStore(overrides?: Partial<SessionStore>): SessionStore {
     setLatency: vi.fn(),
     setStageLatency: vi.fn(),
     pushLatencyHistory: vi.fn(),
+    setResponseComplete: vi.fn(),
+    setLipSync: vi.fn(),
+    updateLastLatencyHistory: vi.fn(),
     setError: vi.fn(),
     setTurnInfo: vi.fn(),
     setSessionComplete: vi.fn(),
@@ -687,9 +690,12 @@ describe("useTutorSocket", () => {
         llm_ms: 180,
         tts_ms: 95,
         total_ms: 650,
+        e2e_ms: null,
+        response_complete_ms: null,
+        lip_sync_ms: null,
       });
       expect(store.pushLatencyHistory).toHaveBeenCalledWith(
-        expect.objectContaining({ stt_ms: 120, llm_ms: 180, tts_ms: 95, total_ms: 650 })
+        expect.objectContaining({ stt_ms: 120, llm_ms: 180, tts_ms: 95, total_ms: 650, e2e_ms: null })
       );
     });
 
@@ -737,6 +743,9 @@ describe("useTutorSocket", () => {
         llm_ms: 180,
         tts_ms: null,
         total_ms: 450,
+        e2e_ms: null,
+        response_complete_ms: null,
+        lip_sync_ms: null,
       });
     });
 
@@ -780,6 +789,9 @@ describe("useTutorSocket", () => {
         llm_ms: 190,
         tts_ms: null,
         total_ms: 420,
+        e2e_ms: null,
+        response_complete_ms: null,
+        lip_sync_ms: null,
       });
       expect(store.pushLatencyHistory).toHaveBeenCalled();
       expect(store.setMode).toHaveBeenCalledWith("idle");

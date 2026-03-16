@@ -65,6 +65,16 @@ export function App() {
   // Store SpatialReal init data until the container element is mounted
   const srInitRef = useRef<{ appId: string; sessionToken: string; avatarId: string } | null>(null);
 
+  // ── Lip-sync measurement ──────────────────────────────────────────────────
+  // Captures the wall-clock timestamps of (a) first audio byte played and
+  // (b) first avatar video frame rendered, then computes the signed offset.
+  // Positive = video frame arrived after audio (video lags).
+  // Negative = audio started after video frame (audio lags).
+  const firstAudioTsRef = useRef<number | null>(null);
+  const firstVideoTsRef = useRef<number | null>(null);
+  // Ensures we compute and store the offset only once per session.
+  const lipSyncComputedRef = useRef(false);
+
   // ── Avatar connection state (shimmer → slow → live) ─────────────────────
   const [avatarState, setAvatarState] = useState<import("./types").AvatarConnectionState>("connecting");
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -97,6 +107,21 @@ export function App() {
 
   // SpatialReal hook (always called — React rules of hooks — but only active when provider is "spatialreal")
   const spatialReal = useSpatialRealAvatar();
+
+  // Compute lip-sync offset once both timestamps are available.
+  // Uses a ref-based guard so it fires at most once per session.
+  const tryComputeLipSync = useCallback(() => {
+    if (lipSyncComputedRef.current) return;
+    const audioTs = firstAudioTsRef.current;
+    const videoTs = firstVideoTsRef.current;
+    if (audioTs === null || videoTs === null) return;
+    // Positive = video frame arrived after audio; negative = audio after video.
+    const lipSyncMs = videoTs - audioTs;
+    console.debug("[App] lip_sync_ms=%d (T_video − T_audio)", lipSyncMs);
+    store.setLipSync(lipSyncMs);
+    store.updateLastLatencyHistory({ lip_sync_ms: lipSyncMs });
+    lipSyncComputedRef.current = true;
+  }, [store]);
 
   const socket = useTutorSocket({
     store,
@@ -190,6 +215,10 @@ export function App() {
         spatialReal.sendAudio(new ArrayBuffer(0), true);
       }
     },
+    onFirstAudioPlayed: (tsMs) => {
+      firstAudioTsRef.current = tsMs;
+      tryComputeLipSync();
+    },
     onSimliError: (message) => {
       console.debug("[App] onAvatarError:", message);
       simliConnectingRef.current = false;
@@ -223,6 +252,9 @@ export function App() {
         clearTimeout(slowTimerRef.current);
         slowTimerRef.current = null;
       }
+      // Capture first-video-frame wall-clock for lip-sync offset measurement.
+      firstVideoTsRef.current = Date.now();
+      tryComputeLipSync();
       setAvatarState("live");
     };
 
@@ -261,7 +293,7 @@ export function App() {
         requestAnimationFrame(poll);
       }
     }
-  }, [avatarState, store.view]);
+  }, [avatarState, store.view, tryComputeLipSync]);
 
   const simliRtc = useSimliWebRTC({
     getSignalingWs: () => socket.ws,
@@ -405,8 +437,11 @@ export function App() {
       clearTimeout(slowTimerRef.current);
       slowTimerRef.current = null;
     }
+    // Capture first-video-frame wall-clock for lip-sync offset measurement.
+    firstVideoTsRef.current = Date.now();
+    tryComputeLipSync();
     setAvatarState("live");
-  }, [avatarProvider, spatialReal.isConnected]);
+  }, [avatarProvider, spatialReal.isConnected, tryComputeLipSync]);
 
   // Re-attach the Simli MediaStream to the new <video> element after a view
   // transition (getting-ready → lesson). The old <video> is destroyed on
@@ -459,6 +494,9 @@ export function App() {
     console.debug("[App] handleBack — disconnecting WS, resetting store");
     simliConnectingRef.current = false;
     srInitRef.current = null;
+    firstAudioTsRef.current = null;
+    firstVideoTsRef.current = null;
+    lipSyncComputedRef.current = false;
     if (avatarProviderRef.current === "spatialreal") {
       spatialReal.dispose();
     }

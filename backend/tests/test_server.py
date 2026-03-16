@@ -94,8 +94,8 @@ def test_ws_passes_query_avatar_provider_to_orchestrator():
     captured: dict[str, str | None] = {"avatar_provider": None}
 
     class FakeOrchestrator:
-        def __init__(self, settings, session_id, send_json, max_turns=None, braintrust_logger=None, avatar_provider=None):
-            del settings, session_id, send_json, max_turns, braintrust_logger
+        def __init__(self, settings, session_id, send_json, max_turns=None, braintrust_logger=None, avatar_provider=None, simli_mode=None):
+            del settings, session_id, send_json, max_turns, braintrust_logger, simli_mode
             captured["avatar_provider"] = avatar_provider
 
         def set_simli(self, adapter):

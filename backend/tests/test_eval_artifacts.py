@@ -110,8 +110,18 @@ class TestPrintReportVerdict:
     def test_readability_out_of_range_fails(self) -> None:
         results = [_make_turn(1, readability=2.0)]
         assert print_report("test", results) is False
-        results = [_make_turn(1, readability=10.0)]
+        # Upper bound is 13.0 (calibrated for STEM content at high-school level)
+        results = [_make_turn(1, readability=14.0)]
         assert print_report("test", results) is False
+
+    def test_readability_stem_level_passes(self) -> None:
+        """Readability between 9 and 13 should pass (STEM content, high school)."""
+        results = [_make_turn(1, readability=10.5)]
+        assert print_report("test", results) is True
+        results = [_make_turn(1, readability=12.5)]
+        assert print_report("test", results) is True
+        results = [_make_turn(1, readability=13.0)]
+        assert print_report("test", results) is True
 
 
 # ---------------------------------------------------------------------------

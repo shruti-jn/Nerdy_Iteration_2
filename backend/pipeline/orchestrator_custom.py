@@ -147,6 +147,7 @@ class CustomOrchestrator:
         max_turns: int | None = None,
         braintrust_logger=None,
         avatar_provider: str | None = None,
+        simli_mode: str | None = None,
     ) -> None:
         self._settings = settings
         self._session_id = session_id
@@ -154,6 +155,12 @@ class CustomOrchestrator:
         self._max_turns = max_turns if max_turns is not None else _default_max_turns()
         self._braintrust = braintrust_logger
         self._avatar_provider: str = avatar_provider or getattr(settings, "avatar_provider", "simli")
+        _effective_simli_mode = simli_mode or getattr(settings, "simli_mode", "custom") or "custom"
+        self._avatar_mode: str = (
+            "spatialreal" if self._avatar_provider == "spatialreal"
+            else "simli_sdk" if _effective_simli_mode == "sdk"
+            else "simli_custom"
+        )
         self._stt = DeepgramSTTAdapter(settings)
         self._llm = GroqLLMEngine(settings)
         self._tts = (
@@ -259,6 +266,7 @@ class CustomOrchestrator:
                 "turn_number": turn_number,
                 "topic": self._topic,
                 "transcript": transcript[:200],
+                "avatar_mode": self._avatar_mode,
             },
         )
 
@@ -269,7 +277,7 @@ class CustomOrchestrator:
             total_steps = get_total_steps(self._topic)
             turn_hint = _build_turn_hint(turn_number, self._max_turns, progress, total_steps, transcript)
 
-            full_text = await self._stream_llm_response(
+            full_text, llm_token_counts = await self._stream_llm_response(
                 f"{turn_hint} {transcript}",
                 context,
                 mc,
@@ -311,6 +319,7 @@ class CustomOrchestrator:
                     tutor_response=clean_text,
                     turn_number=turn_number,
                     latency=timing,
+                    token_counts=llm_token_counts,
                 )
             timing["stt_finish_ms"] = stt_finish_ms
             timing["turn_number"] = session.turn_count
@@ -403,8 +412,12 @@ class CustomOrchestrator:
         mc: MetricsCollector,
         label: str = "turn",
         use_vad: bool = True,
-    ) -> str:
-        """Stream LLM → SentenceBuffer → TTS, send audio_chunk messages. Returns full text.
+    ) -> tuple[str, dict]:
+        """Stream LLM → SentenceBuffer → TTS, send audio_chunk messages.
+
+        Returns:
+            (full_text, token_counts) where token_counts has keys
+            prompt_tokens, completion_tokens, total_tokens (all int, 0 if unavailable).
         use_vad: if True, drive VAD state (speaking); set False for greeting (no listening phase).
         """
         logger.debug("_stream_llm_response session_id=%s label=%s input_len=%d context_len=%d", self._session_id, label, len(user_input), len(context))
@@ -463,8 +476,17 @@ class CustomOrchestrator:
             )
 
         result = full_text.strip()
-        finish_gen(output=result)
-        return result
+        token_counts = self._llm.last_usage or {}
+        usage_details = (
+            {
+                "input": token_counts.get("prompt_tokens", 0),
+                "output": token_counts.get("completion_tokens", 0),
+            }
+            if token_counts
+            else None
+        )
+        finish_gen(output=result, usage_details=usage_details)
+        return result, token_counts
 
     async def _stream_text_audio(
         self,
@@ -549,6 +571,7 @@ class CustomOrchestrator:
                 "session_id": self._session_id,
                 "topic": topic,
                 "turn_number": 0,
+                "avatar_mode": self._avatar_mode,
             },
         )
 
@@ -557,7 +580,7 @@ class CustomOrchestrator:
         try:
             greeting_prompt = build_greeting_prompt(topic)
             context = session.get_context()
-            full_text = await self._stream_llm_response(
+            full_text, greeting_token_counts = await self._stream_llm_response(
                 greeting_prompt,
                 context,
                 mc,
@@ -586,6 +609,7 @@ class CustomOrchestrator:
                     tutor_response=clean_text,
                     turn_number=0,
                     latency=timing,
+                    token_counts=greeting_token_counts,
                 )
 
             # Send visual for step 0 (hook) — hardcoded, don't rely on LLM tag
@@ -645,6 +669,7 @@ class CustomOrchestrator:
                 "session_id": self._session_id,
                 "topic": topic,
                 "turn_number": session.turn_count,
+                "avatar_mode": self._avatar_mode,
             },
         )
 
@@ -714,6 +739,7 @@ class CustomOrchestrator:
         tutor_response: str,
         turn_number: int,
         latency: dict,
+        token_counts: dict | None = None,
     ) -> None:
         """Best-effort Braintrust logging that never blocks the turn path."""
         bt = self._braintrust
@@ -727,6 +753,8 @@ class CustomOrchestrator:
             "turn_number": turn_number,
             "orchestrator": "custom",
             "latency": latency,
+            "avatar_mode": self._avatar_mode,
+            "token_counts": token_counts or {},
         }
         try:
             await asyncio.wait_for(

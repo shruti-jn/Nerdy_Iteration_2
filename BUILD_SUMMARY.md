@@ -1608,3 +1608,40 @@ How: Traced the Newton scene definitions and visual step registry, then reviewed
 - Synchronous `login()` over `init_logger()`: avoids any state mutation of background log queues during validation, keeping the benchmark side-effect free
 
 **Refs:** `backend/benchmarks/validate_providers.py:200-211`, `backend/benchmarks/validate_providers.py:214-234`, `backend/benchmarks/validate_providers.py:254-277`
+
+---
+
+## Latency Bar Enhancements + Lip-Sync Measurement
+
+**What:** Added three new metrics to the LatencyPanel and LatencyTrend history UI: `E2E` (mic release → first audio byte played in browser), `DONE` (mic release → full response finished playing), and `SYNC` (lip-sync offset: T_video_first_frame − T_audio_first_played, signed ms). Also added `setResponseComplete`, `setLipSync`, and `updateLastLatencyHistory` to the session store.
+
+**Why:** The existing LatencyPanel showed only backend pipeline stages (STT, LLM, TTS, TOTAL) with no frontend end-to-end visibility. The product requirements specify `frontend_e2e_ms < 500ms`, full response completion `< 3s`, and lip-sync alignment `±80ms` — none of which were instrumented or displayed.
+
+**How:**
+- Extended `StageLatency` and `TurnLatency` types with `e2e_ms | null`, `response_complete_ms | null`, `lip_sync_ms | null`.
+- `useTutorSocket`: Added `e2eMsRef` (tracks current turn's e2e ms); on first audio chunk play, records `e2eMsRef.current` and emits `onFirstAudioPlayed(tsMs)` callback. On `tutor_text_chunk`, includes `e2e_ms` in the `StageLatency` entry, then chains `.then()` onto `playbackQueueRef` to fire `setResponseComplete` when the last audio chunk finishes (generation-guarded to skip barge-in stale turns).
+- `useSessionStore`: Added `setResponseComplete` and `setLipSync` as null-safe merge-into-existing operations; `updateLastLatencyHistory` patches the last TurnLatency entry in history.
+- `App.tsx`: Added `firstAudioTsRef`, `firstVideoTsRef`, `lipSyncComputedRef` refs. `tryComputeLipSync` computes `lip_sync_ms = T_video − T_audio` once per session when both timestamps are known. Simli: timestamp captured in `markLive()` (rVFC first-frame callback). SpatialReal: timestamp captured in the `spatialReal.isConnected` effect. Both call `store.setLipSync` and `store.updateLastLatencyHistory`.
+- `LatencyPanel`: Added E2E, DONE, SYNC rows with budgets (E2E: green<500/yellow<1000; DONE: green<3000/yellow<5000; SYNC: abs<80 green/abs<200 yellow). SYNC uses signed formatting (+/−) and absolute-value threshold comparison.
+- `LatencyTrend`: Added E2E, Done, Sync columns with signed formatting for Sync.
+- Tests: Updated all `StageLatency`/`TurnLatency` fixtures with new fields; updated `makeStore` mock with new action fns; updated LatencyPanel dash-count (4→7) and green/red dot assertions (4→7); added targeted tests for e2e_ms display, signed SYNC formatting, and new LatencyTrend columns. 172 tests pass.
+- Browser verified: dev server running; TypeScript clean (only pre-existing errors).
+
+**Decisions:**
+- Lip-sync measured as session-start proxy (T_first_video_frame − T_first_audio_played) rather than per-word, because neither Simli nor SpatialReal SDK exposes phoneme-level callbacks. This gives a meaningful session-level signal. True per-word sync would require WebRTC `getStats()` or video analysis (flagged as future work).
+- `response_complete_ms` uses the audio playback queue promise chain rather than the 400ms `responseCommitTimer`, giving a precise "last audio chunk played" signal independent of text commit timing.
+- `setLipSync` / `setResponseComplete` are null-safe merges (no-op if `stageLatency` is null), so out-of-order async updates don't create partial stale objects.
+
+**Refs:** `frontend/src/types.ts:27-55`, `frontend/src/useTutorSocket.ts:213-270`, `frontend/src/useTutorSocket.ts:426-487`, `frontend/src/App.tsx:66-83`, `frontend/src/App.tsx:110-126`, `frontend/src/App.tsx:241-254`, `frontend/src/useSessionStore.ts:48-70`, `frontend/src/components/LatencyPanel.tsx`, `frontend/src/components/LatencyTrend.tsx`
+
+---
+
+## Fix: Remove unsupported `stream_options` from Groq streaming call
+
+**What:** Removed `stream_options={"include_usage": True}` from `GroqLLMEngine.stream()` in `backend/adapters/llm_engine.py`.
+
+**Why:** Groq SDK v1.0.0 does not expose `stream_options` as a parameter on `AsyncCompletions.create()`. Passing it raised `TypeError: AsyncCompletions.create() got an unexpected keyword argument 'stream_options'` on every GREETING_START, crashing the lesson before it could begin.
+
+**How:** Removed the `stream_options` kwarg. Kept the usage-capture block but switched from `chunk.usage is not None` to `getattr(chunk, "usage", None) is not None` so it stays safe if the SDK ever starts populating usage on streaming chunks. All 12 `test_llm_engine.py` tests pass.
+
+**Refs:** `backend/adapters/llm_engine.py:83-90`

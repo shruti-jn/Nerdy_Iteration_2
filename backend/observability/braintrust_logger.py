@@ -74,13 +74,18 @@ class BraintrustLogger:
             # Braintrust expects score values in [0, 1]; keep raw count in metadata.
             "response_length": 1.0 if response_word_count <= 50 else 0.0,
         }
+        token_counts: Dict[str, Any] = turn_data.get("token_counts") or {}
         metadata: Dict[str, Any] = {
             "topic": turn_data.get("topic", ""),
             "turn_number": turn_data.get("turn_number", 0),
             "orchestrator": turn_data.get("orchestrator", "unknown"),
+            "avatar_mode": turn_data.get("avatar_mode", "unknown"),
             "latency": turn_data.get("latency", {}),
             "response_word_count": response_word_count,
             "readability_raw": readability_raw,
+            "prompt_tokens": token_counts.get("prompt_tokens", 0),
+            "completion_tokens": token_counts.get("completion_tokens", 0),
+            "total_tokens": token_counts.get("total_tokens", 0),
         }
         try:
             return self._logger.log(

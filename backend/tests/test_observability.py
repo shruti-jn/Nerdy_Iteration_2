@@ -123,6 +123,8 @@ class TestBraintrustLogTurn:
             "topic": "states of matter",
             "turn_number": 3,
             "orchestrator": "custom",
+            "avatar_mode": "simli_sdk",
+            "token_counts": {"prompt_tokens": 120, "completion_tokens": 45, "total_tokens": 165},
             "latency": {
                 "stt_ms": 120,
                 "llm_ttft_ms": 180,
@@ -155,9 +157,13 @@ class TestBraintrustLogTurn:
         assert metadata["topic"] == "states of matter"
         assert metadata["turn_number"] == 3
         assert metadata["orchestrator"] == "custom"
+        assert metadata["avatar_mode"] == "simli_sdk"
         assert metadata["latency"]["stt_ms"] == 120
         assert metadata["latency"]["total_ms"] == 530
         assert metadata["response_word_count"] == 42
+        assert metadata["prompt_tokens"] == 120
+        assert metadata["completion_tokens"] == 45
+        assert metadata["total_tokens"] == 165
 
     @patch("observability.braintrust_logger.score_response_length", return_value=10)
     @patch("observability.braintrust_logger.score_encouragement", return_value=0.5)
@@ -213,6 +219,51 @@ class TestBraintrustLogTurn:
             "response_length",
         }
         assert set(scores.keys()) == expected_keys
+
+    @patch("observability.braintrust_logger.score_response_length", return_value=10)
+    @patch("observability.braintrust_logger.score_encouragement", return_value=0.5)
+    @patch("observability.braintrust_logger.score_readability", return_value=0.6)
+    @patch("observability.braintrust_logger.score_no_negation", return_value=1.0)
+    @patch("observability.braintrust_logger.score_no_direct_answer", return_value=1.0)
+    @patch("observability.braintrust_logger.score_ends_with_question", return_value=1.0)
+    @patch("observability.braintrust_logger.init_logger")
+    def test_log_turn_defaults_avatar_mode_and_token_counts_when_absent(
+        self,
+        mock_init_logger,
+        mock_ewq,
+        mock_nda,
+        mock_nn,
+        mock_read,
+        mock_enc,
+        mock_rlen,
+    ):
+        """log_turn must use 'unknown' for avatar_mode and 0 for token counts
+        when those keys are absent from turn_data (backwards compatibility)."""
+        mock_logger = MagicMock()
+        mock_init_logger.return_value = mock_logger
+
+        from observability.braintrust_logger import BraintrustLogger
+
+        bt = BraintrustLogger()
+
+        turn_data = {
+            "student_input": "Hello?",
+            "tutor_response": "What do you think?",
+            "topic": "chemistry",
+            "turn_number": 1,
+            "orchestrator": "custom",
+            # intentionally omit avatar_mode and token_counts
+            "latency": {"total_ms": 400},
+        }
+
+        bt.log_turn(turn_data)
+
+        call_kwargs = mock_logger.log.call_args[1]
+        metadata = call_kwargs["metadata"]
+        assert metadata["avatar_mode"] == "unknown"
+        assert metadata["prompt_tokens"] == 0
+        assert metadata["completion_tokens"] == 0
+        assert metadata["total_tokens"] == 0
 
     @patch("observability.braintrust_logger.score_response_length", return_value=15)
     @patch("observability.braintrust_logger.score_encouragement", return_value=0.7)

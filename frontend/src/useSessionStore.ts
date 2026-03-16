@@ -1,6 +1,12 @@
 import { useState, useCallback } from "react";
 import type { AppView, SessionMode, TopicId, ConversationEntry, SessionStore, StageLatency, TurnLatency, LessonVisualState } from "./types";
 
+/** Null-safe merge helper: merges `patch` into an existing StageLatency, or drops it if null. */
+function mergeStage(prev: StageLatency | null, patch: Partial<StageLatency>): StageLatency | null {
+  if (prev === null) return null;
+  return { ...prev, ...patch };
+}
+
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
@@ -38,6 +44,22 @@ export function useSessionStore(): SessionStore {
   const setStageLatency = useCallback((latency: StageLatency) => setStageLatencyState(latency), []);
   const pushLatencyHistory = useCallback((entry: TurnLatency) => {
     setLatencyHistory((prev) => [...prev.slice(-4), entry]); // keep last 5
+  }, []);
+
+  const setResponseComplete = useCallback((ms: number) => {
+    setStageLatencyState((prev) => mergeStage(prev, { response_complete_ms: ms }));
+  }, []);
+
+  const setLipSync = useCallback((ms: number) => {
+    setStageLatencyState((prev) => mergeStage(prev, { lip_sync_ms: ms }));
+  }, []);
+
+  const updateLastLatencyHistory = useCallback((update: Partial<Omit<TurnLatency, "turn">>) => {
+    setLatencyHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1]!;
+      return [...prev.slice(0, -1), { ...last, ...update }];
+    });
   }, []);
   const setError = useCallback((msg: string | null) => setErrorState(msg), []);
   const setVisual = useCallback((v: LessonVisualState | null) => setVisualState(v), []);
@@ -182,6 +204,9 @@ export function useSessionStore(): SessionStore {
     setLatency,
     setStageLatency,
     pushLatencyHistory,
+    setResponseComplete,
+    setLipSync,
+    updateLastLatencyHistory,
     setError,
     setTurnInfo,
     setSessionComplete,
