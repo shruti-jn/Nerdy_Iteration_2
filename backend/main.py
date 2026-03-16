@@ -41,14 +41,6 @@ from prompts.visuals import get_visual_for_step, get_total_steps, visual_to_mess
 from observability.braintrust_logger import BraintrustLogger
 
 logger = logging.getLogger("tutor")
-_DEBUG_LOG_PATH = "/Users/shruti/Software/Nerdy_Iteration_2/.cursor/debug-7e57ee.log"
-
-def _append_debug_log(payload: dict) -> None:
-    try:
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as debug_file:
-            debug_file.write(json.dumps(payload) + "\n")
-    except Exception:
-        pass
 
 class _ISOJsonFormatter(JsonFormatter):
     """JSON formatter with proper ISO-8601 timestamps including milliseconds."""
@@ -214,22 +206,6 @@ async def session_handler(ws: WebSocket):
         session_id = str(uuid.uuid4())
         session_mgr = SessionManager(system_prompt, llm_engine)
 
-    # region agent log
-    _append_debug_log({
-        "sessionId": "7e57ee",
-        "runId": "pre-fix",
-        "hypothesisId": "H8",
-        "location": "backend/main.py:186",
-        "message": "backend_session_source_selected",
-        "data": {
-            "query_session_id": client_session_id,
-            "restored": restored,
-            "resolved_session_id": session_id,
-            "topic": topic,
-        },
-        "timestamp": int(datetime.now(tz=timezone.utc).timestamp() * 1000),
-    })
-    # endregion
 
     active_sessions.add(session_id)
     logger.info("Session started", extra={"event": "session_start", "session_id": session_id, "topic": topic, "restored": restored})
@@ -427,22 +403,6 @@ async def session_handler(ws: WebSocket):
                     greeting_sent = True
                     logger.info("continue_lesson session_id=%s topic=%s", session_id, topic)
                     if any(m.get("role") == "assistant" and m.get("content", "").strip() for m in session_mgr.history):
-                        # region agent log
-                        _append_debug_log({
-                            "sessionId": "7e57ee",
-                            "runId": "post-fix",
-                            "hypothesisId": "H1",
-                            "location": "backend/main.py:325",
-                            "message": "backend_welcome_back_sent_after_continue",
-                            "data": {
-                                "session_id": session_id,
-                                "turn_count": session_mgr.turn_count,
-                                "history_count": len(session_mgr.history),
-                                "avatar_provider": avatar_provider,
-                            },
-                            "timestamp": int(datetime.now(tz=timezone.utc).timestamp() * 1000),
-                        })
-                        # endregion
                         await orchestrator.handle_welcome_back(session_mgr, topic)
                     await session_store.save(session_id, session_mgr.to_dict(), topic)
                 elif msg_type == "end_of_utterance":

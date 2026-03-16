@@ -218,9 +218,6 @@ export function App() {
     if (!video) return;
 
     const markLive = () => {
-      // #region agent log
-      fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H4",location:"frontend/src/App.tsx:215",message:"avatar_video_confirmed_live",data:{view:store.view,avatarState,videoWidth:video.videoWidth,videoHeight:video.videoHeight},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       console.debug("[App] Avatar video confirmed live (%dx%d)", video.videoWidth, video.videoHeight);
       if (slowTimerRef.current) {
         clearTimeout(slowTimerRef.current);
@@ -511,9 +508,6 @@ export function App() {
   }, [socket.sessionKind, startLessonFlow, store]);
 
   const handleContinueLesson = useCallback(async () => {
-    // #region agent log
-    fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H3",location:"frontend/src/App.tsx:411",message:"continue_lesson_selected",data:{view:store.view,avatarState,sessionKind:socket.sessionKind,historyCount:store.history.length},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     pendingLessonActionRef.current = null;
     await startLessonFlow(false);
   }, [avatarState, socket.sessionKind, startLessonFlow, store.history.length, store.view]);

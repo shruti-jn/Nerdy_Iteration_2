@@ -1475,3 +1475,23 @@ What: Moved the expanded photosynthesis leaf panel to the very top-right of the 
 Why: The user wanted the leaf factory zoom to sit in the top-right corner instead of overlapping the middle of the scene.
 
 How: Added factory-open-only CSS positioning overrides for the expanded leaf panel, shifted the factory-open plant and output nodes to keep spacing readable, and updated the factory connector path in `ConceptCanvas.tsx` so the arrow still points cleanly into the moved panel.
+
+---
+
+## 2026-03-15 20:28
+
+What: Tightened the leaf-panel reveal logic so the expanded leaf factory only opens once the lesson actually reaches the leaf-factory step.
+
+Why: The user reported that the leaf panel was appearing before the student had reached the leaf part of the lesson.
+
+How: Changed `ConceptCanvas.tsx` so the expanded leaf zoom keys off the lesson step instead of early leaf/chloroplast unlocks or highlights, and added a regression test covering pre-factory steps with leaf clues already present.
+
+## 2026-03-15 20:35
+
+What: Removed all hard-coded debug instrumentation — 6 `fetch()` calls to `http://127.0.0.1:7762/ingest/...` in the frontend and the `_append_debug_log` helper (plus its 2 call sites and the hard-coded `/Users/shruti/.../.cursor/debug-7e57ee.log` path) in the backend.
+
+Why: These were environment-specific debug collection hooks left over from a prior debugging session. They add runtime noise, leak local paths, and have no place in a clean demo or submission branch.
+
+How: Deleted every `// #region agent log ... // #endregion` block in `useTutorSocket.ts` (5 blocks) and `App.tsx` (2 blocks), and removed the `_DEBUG_LOG_PATH` constant, `_append_debug_log()` function, and its two `# region agent log` call sites in `backend/main.py`. Verified no remaining references via grep. All frontend (169 passed) and backend (357 passed) tests pass.
+
+Refs: `frontend/src/useTutorSocket.ts`, `frontend/src/App.tsx`, `backend/main.py:44-51`

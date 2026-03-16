@@ -357,9 +357,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
         localStorage.setItem(SESSION_SIMLI_MODE_KEY, persistedSimliMode);
         syncSessionIdInUrl(msg.session_id);
-        // #region agent log
-        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:305",message:"session_start_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         store.setMode("idle");
         // Set initial turn info from server if provided
         if (msg.total_turns) {
@@ -375,9 +372,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         onSessionStart?.("start");
       } else if (msg.type === "session_restore") {
         console.debug(ts(), "[TutorSocket] session_restore received, session_id:", msg.session_id, "turn_count:", msg.turn_count, "avatar_provider:", msg.avatar_provider);
-        // #region agent log
-        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H1",location:"frontend/src/useTutorSocket.ts:317",message:"session_restore_received",data:{view:store.view,turnCount:msg.turn_count ?? 0,historyCount:(msg.history ?? []).length,avatarProvider:msg.avatar_provider ?? null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const persistedAvatar = localStorage.getItem(SESSION_AVATAR_KEY) ?? msg.avatar_provider ?? getRequestedAvatarProvider();
         const persistedSimliMode = localStorage.getItem(SESSION_SIMLI_MODE_KEY) ?? msg.simli_mode ?? getRequestedSimliMode();
         freshSessionRef.current = false;
@@ -388,9 +382,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
         localStorage.setItem(SESSION_AVATAR_KEY, persistedAvatar);
         localStorage.setItem(SESSION_SIMLI_MODE_KEY, persistedSimliMode);
         syncSessionIdInUrl(msg.session_id);
-        // #region agent log
-        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H6",location:"frontend/src/useTutorSocket.ts:326",message:"session_restore_stored_without_url_sync",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),messageSessionId:msg.session_id},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         // Notify App which avatar provider is active
         if (msg.avatar_provider) {
           optsRef.current.onAvatarProvider?.(msg.avatar_provider);
@@ -470,9 +461,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
       } else if (msg.type === "audio_chunk") {
         // Play immediately — don't buffer until tutor_text_chunk
         console.debug(ts(), "[TutorSocket] audio_chunk received, base64 len:", msg.data.length);
-        // #region agent log
-        fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H2",location:"frontend/src/useTutorSocket.ts:399",message:"audio_chunk_play_requested",data:{view:store.view,mode:store.mode,historyCount:store.history.length,msgLength:msg.data.length},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         const bytes = decodeAudioChunk(msg.data);
         if (optsRef.current.shouldPlayAudioChunk?.() ?? true) {
           playChunkNow(bytes);
@@ -630,9 +618,6 @@ export function useTutorSocket(opts: TutorSocketOptions): TutorSocket {
 
     if (wsRef.current && connectedRef.current) return;
 
-    // #region agent log
-    fetch("http://127.0.0.1:7762/ingest/041f77ab-5c06-4c36-8619-214e1bd15051",{method:"POST",headers:{"Content-Type":"application/json","X-Debug-Session-Id":"7e57ee"},body:JSON.stringify({sessionId:"7e57ee",runId:"pre-fix",hypothesisId:"H5",location:"frontend/src/useTutorSocket.ts:547",message:"ws_connect_url_built",data:{browserSearch:window.location.search,urlSessionId:new URLSearchParams(window.location.search).get("session_id"),storedSessionId:localStorage.getItem(SESSION_ID_KEY),storedTopicId:localStorage.getItem(SESSION_TOPIC_KEY),storedAvatar:localStorage.getItem(SESSION_AVATAR_KEY),wsUrl:serverUrlRef.current,topicId:optsRef.current.topicId ?? null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     const ws = new WebSocket(serverUrlRef.current);
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
