@@ -74,7 +74,7 @@ async def _lifespan(app: FastAPI):
     """FastAPI lifespan: initialize on startup, clean up on shutdown."""
     global _braintrust
     init_langfuse(settings)
-    _braintrust = BraintrustLogger()
+    _braintrust = BraintrustLogger(api_key=settings.braintrust_api_key)
     yield
     shutdown_langfuse()
 

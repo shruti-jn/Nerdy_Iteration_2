@@ -87,6 +87,22 @@ class TestBraintrustLoggerInit:
         mock_init_logger.assert_called_once_with(project="ai-video-tutor")
         assert bt.logger is mock_logger
 
+    @patch("observability.braintrust_logger.init_logger")
+    def test_braintrust_logger_passes_api_key_when_provided(self, mock_init_logger):
+        """BraintrustLogger should forward an explicit API key to init_logger."""
+        mock_logger = MagicMock()
+        mock_init_logger.return_value = mock_logger
+
+        from observability.braintrust_logger import BraintrustLogger
+
+        bt = BraintrustLogger(api_key="bt-test-key")
+
+        mock_init_logger.assert_called_once_with(
+            project="ai-video-tutor",
+            api_key="bt-test-key",
+        )
+        assert bt.logger is mock_logger
+
 
 class TestBraintrustLogTurn:
     """Tests for BraintrustLogger.log_turn."""

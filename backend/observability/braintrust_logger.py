@@ -36,10 +36,13 @@ class BraintrustLogger:
     Gracefully degrades: if BRAINTRUST_API_KEY is missing or init fails,
     all methods become no-ops."""
 
-    def __init__(self) -> None:
+    def __init__(self, api_key: str = "") -> None:
         self._logger = None
         try:
-            self._logger = init_logger(project="ai-video-tutor")
+            init_kwargs: Dict[str, Any] = {"project": "ai-video-tutor"}
+            if api_key:
+                init_kwargs["api_key"] = api_key
+            self._logger = init_logger(**init_kwargs)
             logger.info("Braintrust logger initialized (project=ai-video-tutor)")
         except Exception as exc:
             logger.info("Braintrust not configured — per-turn scoring disabled: %s", exc)

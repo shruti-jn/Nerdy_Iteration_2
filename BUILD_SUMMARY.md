@@ -1478,6 +1478,20 @@ How: Added factory-open-only CSS positioning overrides for the expanded leaf pan
 
 ---
 
+## 2026-03-15 20:40
+
+What: Wired Braintrust initialization to use an explicit deploy-time API key path and added regression coverage.
+
+Why: Traces were not visible in Braintrust for deployed sessions; relying only on implicit environment discovery in the Braintrust SDK can fail across container/runtime setups even when `BRAINTRUST_API_KEY` exists.
+
+How: Updated `backend/observability/braintrust_logger.py` so `BraintrustLogger` accepts `api_key` and forwards it to `init_logger`, updated `backend/main.py` lifespan to construct `BraintrustLogger(api_key=settings.braintrust_api_key)`, added `test_braintrust_logger_passes_api_key_when_provided` in `backend/tests/test_observability.py`, and verified with `cd backend && pytest` (`372 passed, 1 skipped`), `cd frontend && npm test` (`168 passed, 4 skipped`), plus a live websocket greeting run that logged `braintrust_turn_logged` in `backend/logs/server.log`.
+
+Decisions: Chose explicit key forwarding over SDK-only env discovery for deployment robustness; considered leaving implicit discovery to reduce code surface, but explicit wiring provides deterministic behavior across local/dev/prod with no runtime downside.
+
+Refs: `backend/main.py:77`, `backend/observability/braintrust_logger.py:39-46`, `backend/tests/test_observability.py:91-104`, `RUNBOOK.md:333`
+
+---
+
 ## 2026-03-15 20:28
 
 What: Tightened the leaf-panel reveal logic so the expanded leaf factory only opens once the lesson actually reaches the leaf-factory step.
@@ -1697,3 +1711,13 @@ How: Traced the Newton scene definitions and visual step registry, then reviewed
 **Why:** The user asked for an actual end-to-end validation after the Simli handshake and config fixes.
 
 **How:** Executed `npm run e2e:live` in `frontend/`; both live tests passed in 22s. Reviewed the generated evidence screenshots and confirmed the getting-ready screen reached `Ready!` with the avatar visible and the lesson view rendered live avatar video (`frontend/e2e/evidence/live-02-getting-ready.png`, `frontend/e2e/evidence/live-05-mic-enabled.png`).
+
+---
+
+## 2026-03-15 22:03
+
+What: Audited the remaining uncommitted Braintrust deploy-auth changes and curated the final push set.
+
+Why: The branch needed a verified, intentional commit with supporting evidence, not transient Playwright runner output.
+
+How: Re-ran backend `./venv/bin/pytest` (`373 passed, 1 skipped, 7 deselected`), frontend `npm run typecheck`, and frontend `npm test` (`169 passed, 4 skipped`), kept the live evidence screenshots under `frontend/e2e/evidence/`, and excluded transient `frontend/test-results/` output from the push.
