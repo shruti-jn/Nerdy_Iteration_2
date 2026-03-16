@@ -31,12 +31,6 @@ export function TutorResponse({ mode, streamingWords }: Props) {
       </div>
 
       <div className="tutor-response__scroll" ref={scrollRef}>
-        {!hasContent && !isSpeaking && (
-          <div className="tutor-response__empty">
-            <p>Words will appear here as they speak.</p>
-          </div>
-        )}
-
         {(hasContent || isSpeaking) && (
           <div className="tutor-response__text">
             {streamingWords.map((word, i) => (

@@ -61,12 +61,6 @@ export function TeachingPanel({ mode, streamingWords, visual }: Props) {
       {visual && <div className="teaching-panel__divider" />}
 
       <div className="teaching-panel__scroll" ref={scrollRef}>
-        {!hasContent && !isSpeaking && (
-          <div className="teaching-panel__empty">
-            <p>Words will appear here as they speak.</p>
-          </div>
-        )}
-
         {(hasContent || isSpeaking) && (
           <div className="teaching-panel__text">
             {streamingWords.map((word, i) => (

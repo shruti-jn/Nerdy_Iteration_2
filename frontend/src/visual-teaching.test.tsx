@@ -416,12 +416,12 @@ describe("TeachingPanel", () => {
     expect(screen.getByText("hello")).toBeInTheDocument();
   });
 
-  it("shows empty state when no words and not speaking", () => {
+  it("does not show the old empty transcript placeholder when no words are present", () => {
     render(<TeachingPanel mode="idle" streamingWords={[]} visual={null} />);
 
     expect(
-      screen.getByText("Words will appear here as they speak."),
-    ).toBeInTheDocument();
+      screen.queryByText("Words will appear here as they speak."),
+    ).not.toBeInTheDocument();
   });
 
   it("shows live badge when tutor is responding", () => {

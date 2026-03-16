@@ -1402,3 +1402,20 @@ How: Updated `backend/adapters/avatar_adapter.py` so the custom-mode keepalive s
 - **What:** Removed all git merge conflict markers from `backend/adapters/avatar_adapter.py`
 - **Why:** Unresolved conflicts caused a `SyntaxError` on import, preventing the backend from starting
 - **How:** Kept the HEAD version throughout — it is strictly more robust, adding `_RetryableHandshakeResponseError` handling alongside `TimeoutError`, plus `_preview_payload` and `_parse_answer_sdp` helpers for safer JSON parsing of the Simli SDP answer. Verified with `python -c "from adapters.avatar_adapter import SimliAvatarAdapter"` returning OK.
+
+---
+
+- **What:** Fixed Braintrust per-turn logging — `log_turn` was never called during live sessions
+- **Why:** `braintrust_logger` was accepted as a constructor parameter in `CustomOrchestrator.__init__` but never stored on `self`, so `log_turn` was silently dropped on every turn. Nothing appeared in Braintrust despite the logger initializing correctly.
+- **How:** Added `self._braintrust = braintrust_logger` in `__init__`, then called `self._braintrust.log_turn({...})` after each successful turn (after `mc.end_turn()`, when `clean_text` is available). Passes all 6 Socratic scores + topic/turn_number/orchestrator/latency metadata. Guarded by `if clean_text and self._braintrust is not None` to avoid no-op logger calls on empty turns.
+- **Refs:** `backend/pipeline/orchestrator_custom.py:151`, `backend/pipeline/orchestrator_custom.py:307-315`
+
+---
+
+## 2026-03-15 19:56
+
+What: Made the photosynthesis concept canvas taller and removed the empty transcript placeholder text from both the concept-map panel and the standalone transcript panel.
+
+Why: The concept map still felt cramped in the right rail, and the "Words will appear here as they speak." placeholder was adding visual noise instead of helping.
+
+How: Increased the photosynthesis canvas and diagram min-heights in `frontend/src/components/ConceptCanvas.css`, redistributed the plant and node spacing to use the extra vertical room, removed the empty placeholder rendering from `frontend/src/components/TeachingPanel.tsx` and `frontend/src/components/TutorResponse.tsx`, updated `frontend/src/visual-teaching.test.tsx`, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`63 passed`). Full `npm run typecheck` is currently failing on unrelated existing Simli SDK branch errors in `frontend/src/App.tsx` and `src/App.avatar-lifecycle.test.tsx`.

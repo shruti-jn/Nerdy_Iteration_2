@@ -92,7 +92,7 @@
 }
 
 .concept-canvas__scene--illustration {
-  min-height: 420px;
+  min-height: 528px;
 }
 
 .concept-canvas__scene--flow::before {
@@ -105,8 +105,8 @@
 
 .concept-canvas__bio-diagram {
   position: relative;
-  min-height: 346px;
-  padding: 8px 12px 18px;
+  min-height: 444px;
+  padding: 16px 14px 24px;
 }
 
 .concept-canvas__diagram-arrows {
@@ -138,18 +138,22 @@
 .concept-canvas__plant-illustration {
   position: absolute;
   left: 50%;
-  top: 26px;
-  width: 248px;
-  height: 270px;
+  top: 78px;
+  width: 256px;
+  height: 284px;
   transform: translateX(-50%);
   z-index: 1;
 }
 
 .concept-canvas__plant-illustration--factory-open {
-  left: 40%;
-  top: 52px;
-  width: 224px;
+  left: 39%;
+  top: 108px;
+  width: 222px;
   height: 246px;
+}
+
+.concept-canvas__plant-illustration--factory-open .concept-canvas__plant-stage-label {
+  opacity: 0;
 }
 
 .concept-canvas__plant-sun-glow {
@@ -248,31 +252,31 @@
 
 .concept-canvas__diagram-node--sunlight {
   left: 16px;
-  top: 18px;
+  top: 30px;
   width: 118px;
 }
 
 .concept-canvas__diagram-node--carbon-dioxide {
   left: 10px;
-  top: 126px;
+  top: 184px;
   width: 128px;
 }
 
 .concept-canvas__diagram-node--water {
   left: 12px;
-  bottom: 54px;
+  bottom: 76px;
   width: 100px;
 }
 
 .concept-canvas__diagram-node--oxygen {
   right: 14px;
-  top: 24px;
+  top: 38px;
   width: 104px;
 }
 
 .concept-canvas__diagram-node--sugar {
   right: 12px;
-  top: 248px;
+  top: 348px;
   width: 110px;
 }
 
@@ -306,11 +310,11 @@
 }
 
 .concept-canvas__leaf-zoom--expanded {
-  top: 76px;
+  top: 110px;
   right: 14px;
   left: auto;
   bottom: auto;
-  width: min(248px, calc(100% - 170px));
+  width: min(240px, calc(100% - 188px));
   transform: none;
   z-index: 3;
 }
@@ -612,54 +616,54 @@
   }
 
   .concept-canvas__scene--illustration {
-    min-height: 496px;
+    min-height: 560px;
   }
 
   .concept-canvas__bio-diagram {
-    min-height: 432px;
-    padding: 8px 10px 14px;
+    min-height: 496px;
+    padding: 12px 10px 18px;
   }
 
   .concept-canvas__plant-illustration {
-    top: 74px;
-    width: 204px;
-    height: 228px;
+    top: 104px;
+    width: 208px;
+    height: 232px;
   }
 
   .concept-canvas__plant-illustration--factory-open {
     left: 42%;
-    top: 142px;
+    top: 184px;
     width: 176px;
     height: 204px;
   }
 
   .concept-canvas__diagram-node--sunlight {
     left: 8px;
-    top: 14px;
+    top: 26px;
     width: 100px;
   }
 
   .concept-canvas__diagram-node--carbon-dioxide {
     left: 6px;
-    top: 136px;
+    top: 178px;
     width: 112px;
   }
 
   .concept-canvas__diagram-node--water {
     left: 8px;
-    bottom: 70px;
+    bottom: 84px;
     width: 88px;
   }
 
   .concept-canvas__diagram-node--oxygen {
     right: 8px;
-    top: 26px;
+    top: 30px;
     width: 90px;
   }
 
   .concept-canvas__diagram-node--sugar {
     right: 6px;
-    top: 278px;
+    top: 388px;
     width: 96px;
   }
 
@@ -672,9 +676,9 @@
   }
 
   .concept-canvas__leaf-zoom--expanded {
-    top: 82px;
+    top: 108px;
     right: 8px;
-    width: min(214px, calc(100% - 134px));
+    width: min(214px, calc(100% - 142px));
   }
 
   .concept-canvas__plant-element {
