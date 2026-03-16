@@ -148,7 +148,7 @@ class TestBraintrustLogTurn:
         assert scores["no_negation"] == 1.0
         assert scores["readability"] == 0.75
         assert scores["encouragement"] == 0.8
-        assert scores["response_length"] == 42
+        assert scores["response_length"] == 1.0
 
         # Verify metadata
         metadata = call_kwargs["metadata"]
@@ -157,6 +157,7 @@ class TestBraintrustLogTurn:
         assert metadata["orchestrator"] == "custom"
         assert metadata["latency"]["stt_ms"] == 120
         assert metadata["latency"]["total_ms"] == 530
+        assert metadata["response_word_count"] == 42
 
     @patch("observability.braintrust_logger.score_response_length", return_value=10)
     @patch("observability.braintrust_logger.score_encouragement", return_value=0.5)

@@ -48,6 +48,7 @@ export function App() {
   // always read the latest value. State alone is stale inside closures that
   // run synchronously after setAvatarProvider.
   const avatarProviderRef = useRef<AvatarProvider>(initialProvider);
+  const simliModeRef = useRef<"custom" | "sdk">("custom");
 
   // Ref for the Simli avatar <video> element (shared between GettingReady and Lesson views)
   const videoRef = useRef<HTMLVideoElement | null>(null);

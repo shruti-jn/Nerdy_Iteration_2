@@ -1419,3 +1419,59 @@ What: Made the photosynthesis concept canvas taller and removed the empty transc
 Why: The concept map still felt cramped in the right rail, and the "Words will appear here as they speak." placeholder was adding visual noise instead of helping.
 
 How: Increased the photosynthesis canvas and diagram min-heights in `frontend/src/components/ConceptCanvas.css`, redistributed the plant and node spacing to use the extra vertical room, removed the empty placeholder rendering from `frontend/src/components/TeachingPanel.tsx` and `frontend/src/components/TutorResponse.tsx`, updated `frontend/src/visual-teaching.test.tsx`, and verified with `npm test -- --run src/visual-teaching.test.tsx src/useTutorSocket.test.ts` (`63 passed`). Full `npm run typecheck` is currently failing on unrelated existing Simli SDK branch errors in `frontend/src/App.tsx` and `src/App.avatar-lifecycle.test.tsx`.
+
+## 2026-03-15 19:56
+
+What: Audited the latency fix plan and documented the main implementation risks before code changes.
+
+Why: The proposed queue and metric changes touch interrupt behavior, error handling, and shared timing consumers, so the plan needed a grounded review against the current codebase.
+
+How: Reviewed the plan alongside `backend/pipeline/orchestrator_custom.py`, `backend/pipeline/metrics.py`, `frontend/src/useTutorSocket.ts`, and existing benchmark/test files to identify gaps around producer-task exception handling, barge-in behavior, and incomplete downstream updates.
+
+## 2026-03-15 20:03
+
+What: Read the project brief PDF and summarized the required deliverables, constraints, and success metrics.
+
+Why: The user asked what the brief actually requires, so the answer needed to come from the source brief rather than later implementation plans.
+
+How: Extracted the contents of `Nerdy_Live_AI_Video_Tutor.pdf` with `pdftotext`, reviewed the core objectives, requirements, and evaluation criteria, and distilled the non-negotiable project requirements into a concise summary.
+
+## 2026-03-15 20:05
+
+What: Confirmed the exact project brief file path referenced by the user.
+
+Why: The user pointed to the source PDF directly, so I verified that it matches the brief used for the requirements summary.
+
+How: Matched the user-provided path to `Nerdy_Live_AI_Video_Tutor.pdf` in the workspace and treated it as the canonical project brief for the previous summary.
+
+## 2026-03-15 20:08
+
+What: Compared the project brief requirements against the current repo and identified what is implemented versus still risky for submission.
+
+Why: The user asked for a checklist separating brief requirements, nice-to-haves, current repo coverage, and remaining gaps.
+
+How: Cross-checked the brief against `README.md`, `RUNBOOK.md`, core orchestrator/app files, prompt scaffolds, and the saved eval/benchmark artifacts to produce a brief-vs-repo status summary.
+
+---
+
+## 2026-03-15 20:00
+
+What: Fixed the runtime `CustomOrchestrator` Braintrust crash path and stabilized related test/runtime behavior across backend/frontend test suites.
+
+Why: Deployed sessions were hitting `'CustomOrchestrator' object has no attribute '_log_braintrust_turn'`, and Braintrust turn logs intermittently failed when score payloads were outside Braintrust’s expected `[0,1]` range.
+
+How: Added the missing `asyncio` import used by `CustomOrchestrator._log_braintrust_turn`, normalized Braintrust score fields (`readability`, `response_length`) before logging while preserving raw values in metadata, aligned observability assertions in `backend/tests/test_observability.py`, fixed frontend test regressions (`simliModeRef` + test state var + transcript empty-state assertion), and re-ran full suites: `cd backend && pytest` (357 passed, 1 skipped) and `cd frontend && npm test` (168 passed, 4 skipped). Also validated runtime greeting flow over WebSocket and confirmed `braintrust_turn_logged` in backend logs without the prior attribute error.
+
+Decisions: Chose score normalization (with raw metrics retained in metadata) over dropping fields so Braintrust dashboards continue receiving stable score keys; considered removing problematic metrics entirely, but kept them for continuity and better trendability at the cost of a small normalization policy.
+
+Refs: `backend/pipeline/orchestrator_custom.py:11`, `backend/pipeline/orchestrator_custom.py:710`, `backend/observability/braintrust_logger.py:60-83`, `backend/tests/test_observability.py:151-160`, `frontend/src/App.tsx:51`, `frontend/src/App.avatar-lifecycle.test.tsx:25`, `frontend/src/frontend.test.tsx:318-321`, `RUNBOOK.md:330-332`
+
+---
+
+## 2026-03-15 20:21
+
+What: Moved the expanded photosynthesis leaf panel to the very top-right of the concept canvas and rebalanced the nearby plant/output positions.
+
+Why: The user wanted the leaf factory zoom to sit in the top-right corner instead of overlapping the middle of the scene.
+
+How: Added factory-open-only CSS positioning overrides for the expanded leaf panel, shifted the factory-open plant and output nodes to keep spacing readable, and updated the factory connector path in `ConceptCanvas.tsx` so the arrow still points cleanly into the moved panel.

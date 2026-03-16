@@ -22,6 +22,7 @@ let simliSdkDisconnectSpy: ReturnType<typeof vi.fn>;
 let simliSdkSendAudioSpy: ReturnType<typeof vi.fn>;
 let simliSdkSetSessionSpy: ReturnType<typeof vi.fn>;
 let simliSdkClearBufferSpy: ReturnType<typeof vi.fn>;
+let mockSimliMode: "custom" | "sdk" = "custom";
 let simliConnected = false;
 let startLessonHadAttachedLessonVideo = false;
 let latestTutorSocketOpts:
@@ -145,6 +146,7 @@ describe("App avatar lifecycle", () => {
     simliSdkSendAudioSpy = vi.fn();
     simliSdkSetSessionSpy = vi.fn();
     simliSdkClearBufferSpy = vi.fn();
+    mockSimliMode = "custom";
     simliConnected = false;
     startLessonHadAttachedLessonVideo = false;
     latestTutorSocketOpts = null;

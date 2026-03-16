@@ -8,6 +8,7 @@ Pipeline stage: Orchestration (delegation from main.py)
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import time
@@ -151,6 +152,7 @@ class CustomOrchestrator:
         self._session_id = session_id
         self._send_json = send_json
         self._max_turns = max_turns if max_turns is not None else _default_max_turns()
+        self._braintrust = braintrust_logger
         self._avatar_provider: str = avatar_provider or getattr(settings, "avatar_provider", "simli")
         self._stt = DeepgramSTTAdapter(settings)
         self._llm = GroqLLMEngine(settings)
@@ -302,6 +304,14 @@ class CustomOrchestrator:
             self._vad.finish_speaking()
             mc.end_turn()
             timing = mc.to_dict()
+
+            if clean_text:
+                await self._log_braintrust_turn(
+                    student_input=transcript,
+                    tutor_response=clean_text,
+                    turn_number=turn_number,
+                    latency=timing,
+                )
             timing["stt_finish_ms"] = stt_finish_ms
             timing["turn_number"] = session.turn_count
             timing["total_turns"] = self._max_turns
@@ -570,6 +580,13 @@ class CustomOrchestrator:
                 "timing": timing,
                 "is_greeting": True,
             })
+            if clean_text:
+                await self._log_braintrust_turn(
+                    student_input="[GREETING]",
+                    tutor_response=clean_text,
+                    turn_number=0,
+                    latency=timing,
+                )
 
             # Send visual for step 0 (hook) — hardcoded, don't rely on LLM tag
             visual = get_visual_for_step(topic, 0)
@@ -646,6 +663,12 @@ class CustomOrchestrator:
                 "timing": timing,
                 "is_greeting": True,
             })
+            await self._log_braintrust_turn(
+                student_input="[WELCOME_BACK]",
+                tutor_response=welcome_text,
+                turn_number=session.turn_count,
+                latency=timing,
+            )
             await self._send_json({"type": "greeting_complete"})
             logger.info(
                 "welcome_back_complete session_id=%s turn=%d text=%s timing=%s",
@@ -683,3 +706,49 @@ class CustomOrchestrator:
         self._lesson_progress = progress
         session.lesson_progress = progress.to_dict()
         return progress
+
+    async def _log_braintrust_turn(
+        self,
+        *,
+        student_input: str,
+        tutor_response: str,
+        turn_number: int,
+        latency: dict,
+    ) -> None:
+        """Best-effort Braintrust logging that never blocks the turn path."""
+        bt = self._braintrust
+        if bt is None:
+            return
+
+        payload = {
+            "student_input": student_input,
+            "tutor_response": tutor_response,
+            "topic": self._topic,
+            "turn_number": turn_number,
+            "orchestrator": "custom",
+            "latency": latency,
+        }
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(bt.log_turn, payload),
+                timeout=1.0,
+            )
+            logger.info(
+                "braintrust_turn_logged session_id=%s turn=%s topic=%s",
+                self._session_id,
+                turn_number,
+                self._topic,
+            )
+        except TimeoutError:
+            logger.warning(
+                "braintrust_log_timeout session_id=%s turn=%s",
+                self._session_id,
+                turn_number,
+            )
+        except Exception as exc:
+            logger.warning(
+                "braintrust_log_failed session_id=%s turn=%s error=%s",
+                self._session_id,
+                turn_number,
+                exc,
+            )

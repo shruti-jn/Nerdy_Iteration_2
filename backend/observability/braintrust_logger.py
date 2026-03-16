@@ -57,19 +57,30 @@ class BraintrustLogger:
             return None
 
         response: str = turn_data["tutor_response"]
+        response_word_count = score_response_length(response)
+        readability_raw = score_readability(response)
+        readability_score = (
+            readability_raw
+            if 0.0 <= float(readability_raw) <= 1.0
+            else (1.0 if 4.0 <= float(readability_raw) <= 9.0 else 0.0)
+        )
+
         scores: Dict[str, float | int] = {
             "ends_with_question": score_ends_with_question(response),
             "no_direct_answer": score_no_direct_answer(turn_data),
             "no_negation": score_no_negation(turn_data),
-            "readability": score_readability(response),
+            "readability": readability_score,
             "encouragement": score_encouragement(response),
-            "response_length": score_response_length(response),
+            # Braintrust expects score values in [0, 1]; keep raw count in metadata.
+            "response_length": 1.0 if response_word_count <= 50 else 0.0,
         }
         metadata: Dict[str, Any] = {
             "topic": turn_data.get("topic", ""),
             "turn_number": turn_data.get("turn_number", 0),
             "orchestrator": turn_data.get("orchestrator", "unknown"),
             "latency": turn_data.get("latency", {}),
+            "response_word_count": response_word_count,
+            "readability_raw": readability_raw,
         }
         try:
             return self._logger.log(

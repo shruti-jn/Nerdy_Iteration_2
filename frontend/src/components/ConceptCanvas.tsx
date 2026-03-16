@@ -318,7 +318,7 @@ export function ConceptCanvas({
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${sugarConnectorState}`}
               />
               <path
-                d="M55 40 C 64 34, 72 29, 80 24"
+                d="M55 36 C 64 20, 72 12, 82 8"
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${factoryConnectorState}`}
               />
             </svg>
