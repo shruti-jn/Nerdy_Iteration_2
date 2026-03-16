@@ -305,6 +305,25 @@ describe("ConceptCanvas", () => {
     expect(screen.queryByText("This is the food-making factory.")).not.toBeInTheDocument();
   });
 
+  it("keeps the leaf zoom hidden before the factory step even if leaf clues are unlocked", () => {
+    const { container } = render(
+      <ConceptCanvas
+        diagramId={MOCK_VISUAL.diagramId}
+        stepId={1}
+        highlightKeys={["leaf", "chloroplast"]}
+        unlockedElements={["sunlight", "water", "carbon_dioxide", "leaf", "chloroplast"]}
+        emojiDiagram={MOCK_VISUAL.emojiDiagram}
+        caption={MOCK_VISUAL.caption}
+        isRecap={false}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-leaf-zoom-state="expanded"]'),
+    ).toBeNull();
+    expect(screen.queryByText("Inside the leaf")).not.toBeInTheDocument();
+  });
+
   it("opens the leaf zoom once the lesson reaches the leaf factory", () => {
     const { container } = render(
       <ConceptCanvas

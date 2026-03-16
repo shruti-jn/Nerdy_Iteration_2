@@ -281,12 +281,12 @@
 }
 
 .concept-canvas__bio-diagram--factory-open .concept-canvas__diagram-node--oxygen {
-  top: 258px;
-  right: 20px;
+  top: 272px;
+  right: 18px;
 }
 
 .concept-canvas__bio-diagram--factory-open .concept-canvas__diagram-node--sugar {
-  top: 368px;
+  top: 378px;
   right: 12px;
 }
 
@@ -330,12 +330,12 @@
 }
 
 .concept-canvas__bio-diagram--factory-open .concept-canvas__leaf-zoom--expanded {
-  top: 14px;
-  right: 12px;
+  top: 4px;
+  right: 2px;
 }
 
 .concept-canvas__bio-diagram--factory-open .concept-canvas__plant-illustration--factory-open {
-  top: 140px;
+  top: 146px;
 }
 
 .concept-canvas__leaf-zoom-header {
@@ -687,12 +687,12 @@
   }
 
   .concept-canvas__bio-diagram--factory-open .concept-canvas__diagram-node--oxygen {
-    top: 276px;
+    top: 290px;
     right: 8px;
   }
 
   .concept-canvas__bio-diagram--factory-open .concept-canvas__diagram-node--sugar {
-    top: 398px;
+    top: 410px;
     right: 6px;
   }
 
@@ -711,12 +711,12 @@
   }
 
   .concept-canvas__bio-diagram--factory-open .concept-canvas__leaf-zoom--expanded {
-    top: 14px;
-    right: 8px;
+    top: 4px;
+    right: 2px;
   }
 
   .concept-canvas__bio-diagram--factory-open .concept-canvas__plant-illustration--factory-open {
-    top: 212px;
+    top: 220px;
   }
 
   .concept-canvas__plant-element {

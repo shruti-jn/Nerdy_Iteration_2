@@ -183,11 +183,7 @@ export function ConceptCanvas({
   const highlightSet = new Set<string>(highlightKeys.map(normalizeElementKey));
   const reactionActive = isRecap || highlightSet.has("chlorophyll") || highlightSet.has("leaf");
   const hasFactoryReveal = isRecap || PHOTOSYNTHESIS_FACTORY_NODES.some((elementId) => unlockedSet.has(elementId));
-  const lessonAtLeafFactory =
-    isRecap ||
-    stepId >= PHOTOSYNTHESIS_FACTORY_STEP_ID ||
-    hasFactoryReveal ||
-    PHOTOSYNTHESIS_FACTORY_NODES.some((elementId) => highlightSet.has(elementId));
+  const lessonAtLeafFactory = isRecap || stepId >= PHOTOSYNTHESIS_FACTORY_STEP_ID;
   const leafFactoryActive =
     reactionActive ||
     highlightSet.has("chloroplast") ||
@@ -306,7 +302,7 @@ export function ConceptCanvas({
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${carbonConnectorState}`}
               />
               <path
-                d="M22 77 C 31 74, 38 69, 45 60"
+                d="M22 77 C 31 79, 39 80, 48 72"
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${waterConnectorState}`}
               />
               <path
@@ -318,7 +314,7 @@ export function ConceptCanvas({
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${sugarConnectorState}`}
               />
               <path
-                d="M55 36 C 64 20, 72 12, 82 8"
+                d="M55 38 C 66 18, 78 8, 92 5"
                 className={`concept-canvas__diagram-arrow concept-canvas__diagram-arrow--${factoryConnectorState}`}
               />
             </svg>

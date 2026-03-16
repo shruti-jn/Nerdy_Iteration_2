@@ -1486,6 +1486,26 @@ Why: The user reported that the leaf panel was appearing before the student had 
 
 How: Changed `ConceptCanvas.tsx` so the expanded leaf zoom keys off the lesson step instead of early leaf/chloroplast unlocks or highlights, and added a regression test covering pre-factory steps with leaf clues already present.
 
+---
+
+## 2026-03-15 20:33
+
+What: Moved the expanded leaf panel higher into the upper-right corner and redirected the leaf connector arrow toward that callout.
+
+Why: The user wanted the panel closer to the top-right target area and wanted the leaf-to-panel relationship to read more clearly.
+
+How: Adjusted the factory-open CSS offsets for the expanded leaf panel, output nodes, and plant position in `ConceptCanvas.css`, and updated the factory connector SVG path in `ConceptCanvas.tsx` so the arrow curves from the highlighted leaf toward the new panel position.
+
+---
+
+## 2026-03-15 20:34
+
+What: Redirected the water connector so it enters through the plant’s root area instead of pointing into the middle of the plant body.
+
+Why: The concept map should match the science model more clearly: water is absorbed through the roots.
+
+How: Updated the water SVG connector path in `ConceptCanvas.tsx` to arc into the base/root region and re-ran the focused frontend visual/socket test suite to confirm the canvas behavior still passes.
+
 ## 2026-03-15 20:35
 
 What: Removed all hard-coded debug instrumentation — 6 `fetch()` calls to `http://127.0.0.1:7762/ingest/...` in the frontend and the `_append_debug_log` helper (plus its 2 call sites and the hard-coded `/Users/shruti/.../.cursor/debug-7e57ee.log` path) in the backend.
