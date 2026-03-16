@@ -1645,3 +1645,15 @@ How: Traced the Newton scene definitions and visual step registry, then reviewed
 **How:** Removed the `stream_options` kwarg. Kept the usage-capture block but switched from `chunk.usage is not None` to `getattr(chunk, "usage", None) is not None` so it stays safe if the SDK ever starts populating usage on streaming chunks. All 12 `test_llm_engine.py` tests pass.
 
 **Refs:** `backend/adapters/llm_engine.py:83-90`
+
+---
+
+## Fix: Simli `ERROR: SERVER ERROR IN INITIALIZATION` — skip retry, fail fast
+
+**What:** Added `_FatalHandshakeResponseError` to `backend/adapters/avatar_adapter.py`. Updated `_parse_answer_sdp()` to detect Simli plain-text `ERROR:` responses and raise the fatal variant (bypassing the retry loop). Updated `connect()` to catch `_FatalHandshakeResponseError` and promote it directly to `AdapterError` without retrying.
+
+**Why:** Simli was returning `ERROR: SERVER ERROR IN INITIALIZATION` as a plain-text SDP answer. The adapter was classifying it as `_RetryableHandshakeResponseError` and retrying with backoff — but this is a server-side error that will not improve on retry. Retrying wasted ~2 extra seconds of latency before the frontend received the `SIMLI_CONNECT_FAILED` error and showed the fallback.
+
+**How:** Distinguished error categories in `_parse_answer_sdp`: if the payload starts with `ERROR:` or `ERROR ` (case-insensitive), raise `_FatalHandshakeResponseError`; otherwise follow the existing retryable/fatal JSON-parse path. The retry loop now has an explicit `except _FatalHandshakeResponseError` arm that logs and re-raises as `AdapterError` immediately. Added 2 new tests: one for `ERROR: SERVER ERROR IN INITIALIZATION` (verifies connect_mock called exactly once), one for lowercase `error:` prefix. All 371 backend tests pass.
+
+**Refs:** `backend/adapters/avatar_adapter.py:57-67`, `backend/adapters/avatar_adapter.py:278-315`, `backend/adapters/avatar_adapter.py:341-357`, `backend/tests/test_avatar_adapter.py:477-520`

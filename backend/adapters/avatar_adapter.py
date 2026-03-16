@@ -58,6 +58,14 @@ class _RetryableHandshakeResponseError(RuntimeError):
     """Raised when Simli returns a transient malformed handshake payload."""
 
 
+class _FatalHandshakeResponseError(RuntimeError):
+    """Raised when Simli returns a deterministic server-side error.
+
+    These errors (e.g. 'ERROR: SERVER ERROR IN INITIALIZATION') will not
+    improve on retry, so the retry loop promotes them directly to AdapterError.
+    """
+
+
 class SimliAvatarAdapter(BaseAvatarAdapter):
     """Simli-backed avatar adapter for real-time lip-synced rendering.
 
@@ -259,9 +267,33 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
         return text
 
     def _parse_answer_sdp(self, raw_answer: object) -> str:
-        """Extract the SDP answer, retrying if Simli sends malformed JSON."""
+        """Extract the SDP answer, classifying failures as retryable or fatal.
+
+        Simli may return:
+        - Valid JSON with an 'sdp'/'answer' field (success)
+        - Plain-text ``ERROR: …`` strings (fatal — server-side failure, no
+          point retrying)
+        - Other malformed JSON (retryable — may be transient)
+        """
+        text = (
+            raw_answer.decode("utf-8", errors="replace")
+            if isinstance(raw_answer, bytes)
+            else str(raw_answer)
+        )
+
+        # Detect explicit Simli server-error strings before attempting JSON parse.
+        stripped = text.strip()
+        if stripped.upper().startswith("ERROR:") or stripped.upper().startswith("ERROR "):
+            logger.error(
+                "Simli returned a server-side error (non-retryable): %s",
+                stripped[:200],
+            )
+            raise _FatalHandshakeResponseError(
+                f"Simli server error: {stripped[:200]}"
+            )
+
         try:
-            answer_data = json.loads(raw_answer)
+            answer_data = json.loads(text)
         except json.JSONDecodeError as exc:
             preview = self._preview_payload(raw_answer)
             raise _RetryableHandshakeResponseError(
@@ -323,6 +355,21 @@ class SimliAvatarAdapter(BaseAvatarAdapter):
                             _CONNECT_RETRY_ATTEMPTS,
                         )
                     return result
+                except _FatalHandshakeResponseError as exc:
+                    # Simli returned a deterministic server error — retrying won't help.
+                    logger.error(
+                        "Simli connect fatal failure on attempt %d/%d (not retrying): %s",
+                        attempt,
+                        _CONNECT_RETRY_ATTEMPTS,
+                        exc,
+                    )
+                    await self._cleanup_failed_connect()
+                    raise AdapterError(
+                        stage="avatar",
+                        provider="simli",
+                        cause=exc,
+                        context={"face_id": self._face_id},
+                    ) from exc
                 except (asyncio.TimeoutError, _RetryableHandshakeResponseError) as exc:
                     retryable_error = exc
                     logger.warning(

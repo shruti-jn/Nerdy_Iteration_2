@@ -475,6 +475,56 @@ class TestConnect:
         second_ws.close.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_connect_simli_server_error_raises_immediately_without_retry(self):
+        """connect() raises AdapterError immediately (no retry) when Simli returns ERROR: …"""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+        ice = [{"urls": "stun:stun.l.google.com:19302"}]
+
+        first_ws = AsyncMock()
+        first_ws.recv = AsyncMock(
+            side_effect=["START", "ERROR: SERVER ERROR IN INITIALIZATION"]
+        )
+        first_ws.send = AsyncMock()
+        first_ws.close = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok-xyz", ice)
+            connect_mock = AsyncMock(return_value=first_ws)
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                with pytest.raises(AdapterError) as exc_info:
+                    await adapter.connect("v=0 offer...")
+
+        assert exc_info.value.stage == "avatar"
+        assert exc_info.value.provider == "simli"
+        # Must not retry — only one WebSocket connection opened
+        assert connect_mock.await_count == 1
+        assert "SERVER ERROR IN INITIALIZATION" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_connect_simli_error_prefix_lowercase_raises_immediately(self):
+        """connect() treats 'error: ...' (lowercase) as fatal too."""
+        from adapters.avatar_adapter import SimliAvatarAdapter
+
+        adapter = SimliAvatarAdapter(_mock_config())
+
+        mock_ws = AsyncMock()
+        mock_ws.recv = AsyncMock(side_effect=["START", "error: bad face id"])
+        mock_ws.send = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        with patch("adapters.avatar_adapter.httpx.AsyncClient") as MockClient:
+            MockClient.return_value = _mock_http_session("tok", [])
+            connect_mock = AsyncMock(return_value=mock_ws)
+            with patch("adapters.avatar_adapter.websockets.connect", new=connect_mock):
+                with pytest.raises(AdapterError) as exc_info:
+                    await adapter.connect("v=0 offer")
+
+        assert exc_info.value.stage == "avatar"
+        assert connect_mock.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_connect_unexpected_first_message_raises_adapter_error(self):
         """connect() raises AdapterError when Simli doesn't send 'START'."""
         from adapters.avatar_adapter import SimliAvatarAdapter
