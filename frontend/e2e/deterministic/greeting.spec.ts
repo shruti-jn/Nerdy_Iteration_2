@@ -55,10 +55,8 @@ test.describe("Greeting flow", () => {
     const micBtn = page.getByRole("button", { name: /Hold to speak|Stop recording/ });
     await expect(micBtn).toBeDisabled();
 
-    // The hint text should indicate the tutor is speaking
-    await expect(page.locator(".mic-btn__hint")).toContainText(
-      /introducing the topic|Tutor speaking/,
-    );
+    // The tooltip should indicate the tutor is speaking
+    await expect(micBtn).toHaveAttribute("title", "Tutor is speaking…");
 
     await page.screenshot({ path: "e2e/evidence/greeting-02-mic-disabled.png" });
   });
@@ -77,8 +75,8 @@ test.describe("Greeting flow", () => {
     const micBtn = page.getByRole("button", { name: "Hold to speak" });
     await expect(micBtn).toBeEnabled({ timeout: 5_000 });
 
-    // Hint should say "Hold to speak"
-    await expect(page.locator(".mic-btn__hint")).toHaveText("Hold to speak");
+    // Tooltip should show spacebar shortcut
+    await expect(micBtn).toHaveAttribute("title", "Hold Space to talk");
 
     await page.screenshot({ path: "e2e/evidence/greeting-03-mic-enabled.png" });
   });

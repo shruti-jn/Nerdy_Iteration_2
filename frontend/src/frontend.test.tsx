@@ -89,11 +89,11 @@ describe("T4-02: TopicSelectView topic cards", () => {
 describe("T4-03: BottomBar mic button states", () => {
   const noop = () => {};
 
-  it("shows hold-to-speak hint in idle mode", () => {
+  it("shows spacebar tooltip in idle mode", () => {
     render(
       <BottomBar mode="idle" latencyMs={null} onMicPress={noop} onMicRelease={noop} onBargeIn={noop} />
     );
-    expect(screen.getByText("Hold to speak")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hold to speak/i })).toHaveAttribute("title", "Hold Space to talk");
   });
 
   it("mic button has correct aria-label in idle", () => {
@@ -753,11 +753,11 @@ describe("T4-17: BottomBar tutor-greeting mode", () => {
     expect(micBtn).toBeDisabled();
   });
 
-  it("shows greeting hint text during tutor-greeting", () => {
+  it("shows tutor-speaking tooltip during tutor-greeting", () => {
     render(
       <BottomBar mode="tutor-greeting" latencyMs={null} onMicPress={noop} onMicRelease={noop} onBargeIn={noop} />
     );
-    expect(screen.getByText("Socrates VI is introducing the topic…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hold to speak/i })).toHaveAttribute("title", "Tutor is speaking…");
   });
 
   it("interrupt button is disabled during tutor-greeting", () => {

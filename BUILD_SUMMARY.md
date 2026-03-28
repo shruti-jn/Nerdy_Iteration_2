@@ -1721,3 +1721,65 @@ What: Audited the remaining uncommitted Braintrust deploy-auth changes and curat
 Why: The branch needed a verified, intentional commit with supporting evidence, not transient Playwright runner output.
 
 How: Re-ran backend `./venv/bin/pytest` (`373 passed, 1 skipped, 7 deselected`), frontend `npm run typecheck`, and frontend `npm test` (`169 passed, 4 skipped`), kept the live evidence screenshots under `frontend/e2e/evidence/`, and excluded transient `frontend/test-results/` output from the push.
+
+---
+
+## 2026-03-15 22:10
+
+What: Appended a second demo script version at the bottom of `DEMO_SCRIPT_LATENCY_STORY.md` that reads like live spoken stage narration instead of a polished written explainer.
+
+Why: You liked the content of the first pass, but you needed a script that sounds human when spoken during the product demo and can be followed while clicking through the app.
+
+How: Kept the existing script untouched, then added a new `Version 2: Spoken Demo Script` section with direct action cues, exact lines to say to the audience, exact mic lines to speak into the lesson, and short human-sounding transitions for the build story, Socrates VI explanation, and concept-map explanation.
+
+---
+
+## 2026-03-15 23:16
+
+What: Expanded the spoken `Version 2` demo script with a more natural explanation of the Socratic-method nuances and the concept-map teaching strategy.
+
+Why: You wanted the live script to briefly explain what makes the tutoring approach thoughtful and what makes the concept map more than just a visual decoration.
+
+How: Added two short spoken paragraphs in `DEMO_SCRIPT_LATENCY_STORY.md` that explain answer-uptake plus scaffold escalation in the Socratic flow, and hidden/current/mastered reveal behavior in the concept map, while keeping the tone conversational enough to say out loud during the demo.
+
+---
+
+## 2026-03-26 00:15
+
+What: Verified all API keys, fixed test_server.py avatar_provider sensitivity, updated SpatialReal API key, and deployed to Fly.io production.
+
+Why: Project needed to be brought up locally and deployed to production. The SpatialReal API key was rotated, and the backend tests were brittle — they assumed `avatar_provider=simli` from the live `.env`, causing 10 failures when the provider was changed to `spatialreal`.
+
+How: (1) Curled all 8 API provider endpoints (Deepgram, Groq, Cartesia, Simli, ElevenLabs, SpatialReal, Langfuse, Braintrust) — all returned 200. (2) Started backend on :8000 and frontend on :5173; confirmed topic picker renders in browser. (3) Added `AVATAR_PROVIDER=spatialreal` to local `.env`. (4) Fixed `test_server.py` by adding an `autouse` fixture that patches `settings.avatar_provider` to `simli` — these are WebSocket protocol contract tests, not avatar-specific flows, so they should be env-independent. All 373 backend tests + 169 frontend tests pass. (5) Updated SpatialReal API key locally and on Fly.io. (6) Deployed via `flyctl deploy --remote-only` — both machines healthy, health check returns `{"status":"ok"}`. (7) Confirmed production at https://nerdy-tutor.fly.dev/ returns 200.
+
+Decisions: Chose an `autouse` pytest fixture in `test_server.py` over per-test patching or a conftest-level override. Pros: single point of control, all tests in the file get consistent behavior, no risk of forgetting to patch a new test. Cons: slightly implicit. Alternative was patching in each test — rejected because it's repetitive and error-prone for 10+ tests. Alternative was a conftest fixture — rejected because other test files (e.g. `test_orchestrator_custom.py`) explicitly parametrize avatar_provider and don't need a blanket override.
+
+Refs: backend/tests/test_server.py:23-33, backend/config.py:60, backend/main.py:313-322, fly.toml:1-32
+
+---
+
+## 2026-03-26 01:10
+
+What: Fixed SpatialReal avatar not talking — root cause was app_id mismatch after API key rotation. Updated SPATIALREAL_APP_ID from `app_mmsnk6p1_19ppu5s` to `app_mn7msm1e_1b5rd17` in local .env and Fly.io secrets. Redeployed production.
+
+Why: The user rotated their SpatialReal API key. The new key is associated with a different app (`app_mn7msm1e_1b5rd17`), but the config still had the old app_id. The token was generated successfully (HTTP 200), but the JWT payload contained `app_id: app_mn7msm1e_1b5rd17` while the frontend SDK was initialized with the old `app_mmsnk6p1_19ppu5s`. This mismatch caused the SpatialReal WebSocket connection to `wss://api.intl.spatialwalk.cloud/v2/driveningress/websocket` to fail silently, so the avatar rendered but never lip-synced or played audio.
+
+How: (1) Decoded the JWT payload from the token endpoint response to discover the app_id embedded in the token (`app_mn7msm1e_1b5rd17`) didn't match the configured `SPATIALREAL_APP_ID`. (2) Updated the app_id locally via `sed` in `.env` and on Fly.io via `flyctl secrets set`. (3) Restarted local backend and redeployed production. (4) Verified end-to-end in the browser: avatar loads, SpatialReal SDK connects (`Connection state: connected`), audio chunks forwarded via `sendAudio()`, avatar lip-syncs during greeting. (5) Concept map confirmed working — shows "Photosynthesis Process" with plant diagram and 0/8 progress dots. 373 backend + 169 frontend tests pass.
+
+Decisions: Diagnosed by inspecting the JWT payload of the generated token rather than guessing at the error. The SpatialReal SDK fails silently on app_id mismatch (WebSocket just dies), so the JWT decode was the only way to pinpoint the issue. No code changes required — purely a config fix.
+
+Refs: backend/config.py:68, backend/adapters/spatialreal_adapter.py:92-109, frontend/src/useSpatialRealAvatar.ts:138-142
+
+---
+
+### Spacebar hint tooltip on mic button
+
+What: Added a native browser tooltip (`title` attribute) to the mic button in `BottomBar.tsx` that shows the spacebar keyboard shortcut.
+
+Why: Spacebar hold-to-talk was already implemented (`App.tsx:622-643`) but users had no way to discover the shortcut. A hover tooltip is the lightest-weight way to surface it.
+
+How: (1) Added a `title` attribute to the mic `<button>` element with three state-dependent values: "Hold Space to talk" (idle), "Release Space to send" (recording), "Tutor is speaking…" (disabled). Uses the browser's native tooltip — no extra CSS, JS, or components needed. (2) Removed the `<span className="mic-btn__hint">` element and its CSS (`.mic-btn__hint`), since the tooltip replaces the always-visible hint text. (3) Updated 3 unit tests and 2 E2E tests that referenced the removed hint text to assert on the `title` attribute instead. 169 frontend + 373 backend tests pass.
+
+Decisions: Used native `title` attribute over a custom tooltip component. Pros: zero dependencies, zero CSS, built-in browser behavior, accessible. Cons: no style control, slight delay before appearing. Acceptable trade-off for a discoverability hint.
+
+Refs: frontend/src/components/BottomBar.tsx:79, frontend/src/components/BottomBar.css:105-111 (removed), frontend/src/frontend.test.tsx:92-97,756-761, frontend/e2e/deterministic/greeting.spec.ts:58-61,80-81

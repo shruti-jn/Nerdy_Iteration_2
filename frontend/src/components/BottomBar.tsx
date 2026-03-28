@@ -76,13 +76,11 @@ export function BottomBar({
           onTouchCancel={handlePointerRelease}
           aria-label={isRecording ? "Stop recording" : "Hold to speak"}
           aria-pressed={isRecording}
+          title={isRecording ? "Release Space to send" : isTutorSpeaking ? "Tutor is speaking…" : "Hold Space to talk"}
           disabled={isTutorSpeaking}
         >
           <MicIcon active={isRecording} />
         </button>
-        <span className="mic-btn__hint">
-          {isRecording ? "Release to send" : isGreeting ? "Socrates VI is introducing the topic…" : isTutorSpeaking ? "Tutor speaking…" : "Hold to speak"}
-        </span>
       </div>
 
       {/* Right: barge-in + latency */}
