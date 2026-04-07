@@ -17,6 +17,10 @@ let spatialStartSpy: ReturnType<typeof vi.fn>;
 let spatialSendAudioSpy: ReturnType<typeof vi.fn>;
 let spatialConnectedSetter: ((value: boolean) => void) | null;
 let simliRtcSendAudioSpy: ReturnType<typeof vi.fn>;
+let audioStartSpy: ReturnType<typeof vi.fn>;
+let audioStopSpy: ReturnType<typeof vi.fn>;
+let sendEndOfUtteranceSpy: ReturnType<typeof vi.fn>;
+let audioActive = false;
 let simliConnected = false;
 let startLessonHadAttachedLessonVideo = false;
 let latestTutorSocketOpts:
@@ -29,9 +33,11 @@ let latestTutorSocketOpts:
 
 vi.mock("./useAudioCapture", () => ({
   useAudioCapture: () => ({
-    start: vi.fn(async () => {}),
-    stop: vi.fn(),
-    isActive: false,
+    start: audioStartSpy,
+    stop: audioStopSpy,
+    get isActive() {
+      return audioActive;
+    },
   }),
 }));
 
@@ -62,7 +68,7 @@ vi.mock("./useTutorSocket", () => ({
       disconnect: disconnectSpy,
       reconnect: reconnectSpy,
       sendAudioChunk: vi.fn(),
-      sendEndOfUtterance: vi.fn(),
+      sendEndOfUtterance: sendEndOfUtteranceSpy,
       sendStartLesson: (...args: unknown[]) => {
         const lessonVideo = document.querySelector(".avatar-feed__video") as HTMLVideoElement | null;
         startLessonHadAttachedLessonVideo = lessonVideo?.srcObject === fakeStream;
@@ -135,6 +141,14 @@ describe("App avatar lifecycle", () => {
     spatialSendAudioSpy = vi.fn();
     spatialConnectedSetter = null;
     simliRtcSendAudioSpy = vi.fn();
+    audioActive = false;
+    audioStartSpy = vi.fn(async () => {
+      audioActive = true;
+    });
+    audioStopSpy = vi.fn(() => {
+      audioActive = false;
+    });
+    sendEndOfUtteranceSpy = vi.fn();
     simliConnected = false;
     startLessonHadAttachedLessonVideo = false;
     latestTutorSocketOpts = null;
@@ -317,5 +331,78 @@ describe("App avatar lifecycle", () => {
     expect(reconnectSpy).not.toHaveBeenCalled();
     expect(spatialStartSpy).toHaveBeenCalledTimes(1);
     expect(sendStartLessonSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts and stops mic capture from the spacebar even when a button has focus", async () => {
+    mockSessionKind = "restore";
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start Photosynthesis/i }));
+
+    const readyVideo = document.querySelector(".getting-ready__video") as HTMLVideoElement;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    Object.defineProperty(readyVideo, "videoWidth", { configurable: true, value: 640 });
+    Object.defineProperty(readyVideo, "videoHeight", { configurable: true, value: 360 });
+
+    await act(async () => {
+      fireEvent.playing(readyVideo);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue Lesson" }));
+    });
+
+    const micBtn = screen.getByRole("button", { name: /hold to speak/i });
+    micBtn.focus();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " ", bubbles: true }));
+    });
+    expect(audioStartSpy).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { code: "Space", key: " ", bubbles: true }));
+    });
+    expect(audioStopSpy).toHaveBeenCalledTimes(1);
+    expect(sendEndOfUtteranceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start mic capture from spacebar inside an editable field", async () => {
+    mockSessionKind = "restore";
+
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start Photosynthesis/i }));
+
+    const readyVideo = document.querySelector(".getting-ready__video") as HTMLVideoElement;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    Object.defineProperty(readyVideo, "videoWidth", { configurable: true, value: 640 });
+    Object.defineProperty(readyVideo, "videoHeight", { configurable: true, value: 360 });
+
+    await act(async () => {
+      fireEvent.playing(readyVideo);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Continue Lesson" }));
+    });
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " ", bubbles: true }));
+    });
+
+    expect(audioStartSpy).not.toHaveBeenCalled();
+    input.remove();
   });
 });

@@ -295,7 +295,9 @@ It cannot perfectly judge every free-form student answer. If a student uses unex
 | Boredom detection / Cool Fact pivots | ✅ Done | "idk"/"boring"/short answers → Gross or Cool Fact from topic scaffold |
 | Kid-culture analogies | ✅ Done | Minecraft, phone charging, smoothie analogies woven into prompts |
 | Session persistence (reconnect) | ✅ Done | Browser URL `session_id` is the restore source of truth; removing it starts a fresh session; restore keeps the app on Getting Ready until `Continue Lesson`, then sends the welcome-back prompt |
+| Bugfix Bayesian verification memory | ✅ Done | Repo-level instruction in `AGENTS.md`: after bugfixes, estimate final user-success probability; if honest confidence is below 90%, keep iterating and improve testability/verification |
 | Tutor identity: Socrates VI | ✅ Done | Tutor name updated across prompts, greeting copy, lesson UI, and conversation labels |
+| Spacebar hold-to-talk shortcut | ✅ Done | Keyboard shortcut now follows focused-element rules instead of requiring `document.body`; works in lesson idle state while still ignoring editable fields |
 | Tutor speech pronunciation alias | ✅ Done | TTS-only normalization rewrites `Socrates VI` to `Socrates Six` before provider synthesis so spoken audio says "Six" while UI and transcripts stay unchanged |
 | Scorer: Teacher Mode aware | ✅ Done | `score_no_direct_answer()` accepts `teacher_mode` flag; backward compatible |
 | SessionManager serialization | ✅ Done | `to_dict()` / `from_dict()` for session persistence and crash recovery |

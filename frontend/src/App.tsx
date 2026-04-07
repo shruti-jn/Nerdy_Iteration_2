@@ -23,6 +23,13 @@ function ts(): string {
   return `[${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}.${String(now.getMilliseconds()).padStart(3, "0")}]`;
 }
 
+function isEditableElement(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element.isContentEditable) return true;
+  const tag = element.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 export function App() {
   const store = useSessionStore();
   const pendingLessonActionRef = useRef<"fresh" | "continue" | null>(null);
@@ -623,13 +630,22 @@ export function App() {
   useEffect(() => {
     if (store.view !== "lesson") return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.target === document.body && store.mode === "idle") {
+      if (
+        e.code === "Space" &&
+        !e.repeat &&
+        !isEditableElement(document.activeElement) &&
+        store.mode === "idle"
+      ) {
         e.preventDefault();
         handleMicPress();
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space" && store.mode === "student-speaking") {
+      if (
+        e.code === "Space" &&
+        !isEditableElement(document.activeElement) &&
+        store.mode === "student-speaking"
+      ) {
         e.preventDefault();
         handleMicRelease();
       }

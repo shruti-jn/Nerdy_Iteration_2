@@ -1783,3 +1783,31 @@ How: (1) Added a `title` attribute to the mic `<button>` element with three stat
 Decisions: Used native `title` attribute over a custom tooltip component. Pros: zero dependencies, zero CSS, built-in browser behavior, accessible. Cons: no style control, slight delay before appearing. Acceptable trade-off for a discoverability hint.
 
 Refs: frontend/src/components/BottomBar.tsx:79, frontend/src/components/BottomBar.css:105-111 (removed), frontend/src/frontend.test.tsx:92-97,756-761, frontend/e2e/deterministic/greeting.spec.ts:58-61,80-81
+
+## 2026-03-30 14:30
+What: Compared `Nerdy_Iteration_2` with sister repo `nerdy-vid-tutor-main` across architecture, latency/metrics strategy, Socratic prompting, and student engagement
+Why: Needed a grounded side-by-side assessment of how each repo handles performance, pedagogy, and engagement
+How: Reviewed architecture docs, orchestration code, prompt definitions, evaluation/benchmark modules, and tutoring UI flows in both repositories
+
+---
+
+## 2026-04-06 16:15
+What: Audited the repository docs, code paths, and test surface without changing product behavior; appended the audit outcome to `BUILD_SUMMARY.md`.
+Why: Needed a current repo-wide audit grounded in both the documented contracts and the actual implementation.
+How: Read the repo markdown/docs set end to end, inspected the core backend/frontend session flow, and ran the current suites: `python3 -m pytest` in `backend/` (`373 passed, 1 skipped, 7 deselected`) and `npm test` in `frontend/` (`169 passed, 4 skipped`). Documented the main findings around stale test-gate docs, a skipped backend contract test, and a live-canary path that does not actually drive a student turn.
+Decisions: Chose to validate the audit with the full backend/frontend test suites before closing instead of relying only on static review. Pros: findings reflect the current tree, not assumptions. Cons: longer audit cycle. No product-code changes were made.
+Refs: TEST_GATES.md:53-90, backend/tests/test_server.py:428-440, backend/main.py:364-424, frontend/e2e/live/one-turn.spec.ts:64-78, frontend/src/mic-pipeline.test.tsx:203-204
+
+---
+
+## 2026-04-06 16:22
+What: Added a repo-level bugfix verification memory in `AGENTS.md` and reflected it in the `RUNBOOK.md` feature status table.
+Why: Needed a persistent instruction that bugfix work is not done until verification supports an honest 90%+ probability that the user will find it working, with testability treated as a first-class requirement.
+How: Appended new project instructions to `AGENTS.md` requiring an explicit Bayesian probability estimate after bugfixes, mandatory continued iteration below 90%, and active investment in logging/tests/refactors/manual checks to improve observability and confidence. Added a corresponding status row to `RUNBOOK.md` so the rule is visible in repo operations docs.
+
+---
+
+## 2026-04-06 17:49
+What: Fixed the spacebar hold-to-talk regression in `frontend/src/App.tsx`, added focused-keyboard regression coverage in `frontend/src/App.avatar-lifecycle.test.tsx`, and updated the feature status table in `RUNBOOK.md`.
+Why: Pressing the spacebar was no longer starting mic capture because the shortcut handler only accepted events whose target was exactly `document.body`, which is too brittle once focus lands on buttons or other non-editable elements in the lesson UI.
+How: Replaced the raw event-target guard with a focused-element check that blocks the shortcut only when the active element is editable (`input`, `textarea`, `select`, or contenteditable). Added regression tests covering the real idle lesson path where a resumed session uses spacebar to start and stop capture while a button has focus, plus a negative test proving the shortcut is ignored inside editable fields. Verified with `npx vitest run src/App.avatar-lifecycle.test.tsx`, `cd frontend && npm test` (`171 passed, 4 skipped`), and `cd backend && python3 -m pytest` (`373 passed, 1 skipped, 7 deselected`).
