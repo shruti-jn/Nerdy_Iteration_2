@@ -1811,3 +1811,48 @@ How: Appended new project instructions to `AGENTS.md` requiring an explicit Baye
 What: Fixed the spacebar hold-to-talk regression in `frontend/src/App.tsx`, added focused-keyboard regression coverage in `frontend/src/App.avatar-lifecycle.test.tsx`, and updated the feature status table in `RUNBOOK.md`.
 Why: Pressing the spacebar was no longer starting mic capture because the shortcut handler only accepted events whose target was exactly `document.body`, which is too brittle once focus lands on buttons or other non-editable elements in the lesson UI.
 How: Replaced the raw event-target guard with a focused-element check that blocks the shortcut only when the active element is editable (`input`, `textarea`, `select`, or contenteditable). Added regression tests covering the real idle lesson path where a resumed session uses spacebar to start and stop capture while a button has focus, plus a negative test proving the shortcut is ignored inside editable fields. Verified with `npx vitest run src/App.avatar-lifecycle.test.tsx`, `cd frontend && npm test` (`171 passed, 4 skipped`), and `cd backend && python3 -m pytest` (`373 passed, 1 skipped, 7 deselected`).
+
+## 2026-04-07 16:05
+What: Documented how the concept map is built and how clue reveals work across the backend lesson-progress logic and frontend concept renderers.
+Why: The current system mixes deterministic backend progression with topic-specific frontend rendering, so explaining where reveal decisions happen helps make the architecture easier to reason about.
+How: Traced the concept-map flow through `backend/pipeline/lesson_progress.py`, `backend/prompts/visuals.py`, `frontend/src/components/ConceptCanvas.tsx`, and `frontend/src/conceptScenes.ts`, then summarized how transcript matching, step advancement, visual payloads, and frontend rendering fit together.
+
+## 2026-04-07 16:07
+What: Outlined a scalable approach for generating concept maps for roughly 1,000 4th-5th grade topics.
+Why: The current concept-map system works well for a small set of handcrafted topics, but a large catalog needs a data-driven content pipeline instead of topic-specific code.
+How: Proposed a schema-first architecture with topic metadata, concept graph definitions, reusable visual templates, deterministic mastery rules, and optional LLM-assisted content generation constrained by backend validation.
+
+## 2026-04-07 16:08
+What: Proposed 10 starter topics for a scalable 4th-5th grade concept-map catalog.
+Why: A small but varied seed set makes it easier to validate reusable visual templates, mastery rules, and topic-authoring workflows before scaling to hundreds of topics.
+How: Selected cross-subject topics that fit common elementary curricula and align well with reusable map patterns like process flow, cycle, cause/effect, compare/contrast, and layered systems.
+
+## 2026-04-07 16:09
+What: Expanded the 10 starter topics into a mini curriculum pack with template recommendations, core concepts, reveal order, and misconceptions.
+Why: Concrete starter packs make the scalable concept-map architecture easier to validate than a plain topic list.
+How: Defined each topic in terms of reusable visual patterns and age-appropriate concept progression suitable for 4th-5th grade tutoring.
+
+## 2026-04-07 16:11
+What: Generated concrete starter topic-pack content for 10 concept-map topics instead of only describing the schema.
+Why: The user wanted ready-to-use generated topic definitions, not just a high-level outline.
+How: Produced structured, age-appropriate topic packs with big ideas, core concepts, reveal order, and misconceptions that can be translated into a future content schema.
+
+## 2026-04-07 16:13
+What: Explained how generated topic-pack input would be turned into a visual concept map.
+Why: The next architectural step is connecting structured topic content to reusable renderers so large-scale map generation is concrete and actionable.
+How: Described a pipeline from topic-pack fields to template selection, node and edge generation, layout, unlock state, and frontend rendering updates.
+
+## 2026-04-07 16:14
+What: Explained how a generated concept-map system would select images and visual styles for each topic.
+Why: Scalable concept-map generation needs deterministic, age-appropriate image selection rules rather than manual art choices per topic.
+How: Described selecting visuals from topic metadata, template type, concept roles, and a constrained asset/style library with optional generation only inside approved bounds.
+
+## 2026-04-07 16:16
+What: Interpreted the current concept-map screenshot and related the scalable design advice to the app's existing visual treatment.
+Why: The user shared the actual concept-map UI and needed guidance grounded in the current design rather than a generic system description.
+How: Analyzed the screenshot's structure, visual hierarchy, and reveal behavior, then explained how to generalize that style into reusable templates for more topics.
+
+## 2026-04-07 16:18
+What: Added the missing frontend favicon asset `frontend/public/nerdy-icon.svg`.
+Why: `frontend/index.html` referenced `/nerdy-icon.svg`, but the file was absent, causing a browser 404 on every page load.
+How: Created a lightweight SVG icon in the frontend public assets directory so Vite and the production build can serve the referenced favicon path directly.
